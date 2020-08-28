@@ -25,6 +25,21 @@ month_names = [
     'December',
 ]
 
+month_lengths = [
+    31,
+    28.25,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+]
+
 
 class TimeStampSet:
     def __init__(self):
