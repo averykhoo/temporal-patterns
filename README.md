@@ -35,4 +35,8 @@
     *   can use ann library 
         *   try [scann](https://github.com/google-research/google-research/tree/master/scann)
         *   or [annoy](https://anaconda.org/conda-forge/python-annoy)
-    
+*   lookup similarity separately for week, month, year, etc
+    *   how to balance between the similarities?
+    *   equal weight?
+    *   harmonic/geometric mean?
+    *   
