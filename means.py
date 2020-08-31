@@ -13,8 +13,10 @@ def general_mean(*xs, dim=1):
     special cases:
     dim=-inf -> minimum
     dim=-1   -> harmonic mean
+             -- geometric-harmonic mean would fit in here
     dim=0    -> geometric mean
              -- logarithmic mean would fit in here
+             -- arithmetic-geometric mean would fit in here
     dim=1    -> arithmetic mean
     dim=2    -> root mean square (quadratic mean)
     dim=3    -> cubic mean
@@ -76,32 +78,31 @@ def contraharmonic_mean(*xs):
 
 def geometric_harmonic_mean(*xs):
     """
-    https://en.wikipedia.org/wiki/Geometric-harmonic_mean
+    https://en.wikipedia.org/wiki/geometric-harmonic_mean
     """
-    g0 = general_mean(*xs, dim=0)
-    h0 = general_mean(*xs, dim=-1)
+    g_mean = general_mean(*xs, dim=0)
+    h_mean = general_mean(*xs, dim=-1)
 
-    while abs(g0 - h0) / max(g0, h0) > 1e-15:
-        g1 = math.sqrt(g0 * h0)
-        h1 = 2 / (1 / g0 + 1 / h0)
-        g0 = g1
-        h0 = h1
+    while abs(g_mean - h_mean) / max(g_mean, h_mean) > 1e-15:
+        g_next = math.sqrt(g_mean * h_mean)
+        h_next = 2 / (1 / g_mean + 1 / h_mean)
+        g_mean = g_next
+        h_mean = h_next
 
-    return g0
+    return g_mean
 
 
 def arithmetic_geometric_mean(*xs):
     """
-    https://en.wikipedia.org/wiki/Arithmetic-geometric_mean
+    https://en.wikipedia.org/wiki/arithmetic-geometric_mean
     """
-    a0 = general_mean(*xs, dim=1)
-    g0 = general_mean(*xs, dim=0)
+    a_mean = general_mean(*xs)
+    g_mean = general_mean(*xs, dim=0)
 
-    while abs(g0 - a0) / max(g0, a0) > 1e-15:
-        print(g0, a0)
-        g1 = math.sqrt(g0 * a0)
-        a1 = (a0 + g0) / 2
-        g0 = g1
-        a0 = a1
+    while abs(g_mean - a_mean) / max(g_mean, a_mean) > 1e-15:
+        a_next = (a_mean + g_mean) / 2
+        g_next = math.sqrt(g_mean * a_mean)
+        a_mean = a_next
+        g_mean = g_next
 
-    return g0
+    return g_mean

@@ -49,8 +49,7 @@
         *   or [annoy](https://anaconda.org/conda-forge/python-annoy)
 *   lookup similarity separately for week, month, year, etc
     *   how to balance between the similarities?
-    *   equal weight?
-    *   harmonic/geometric mean?
+    *   probably use `general_mean(*xs, dim=0.1)` where `x` (similarity score) is between 0 and 1
 *   anomalies
     *   need to remove the event before seeing how anomalous it is
     *   how to handle zero probability?
