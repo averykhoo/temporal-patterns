@@ -1,5 +1,17 @@
 #   temporal_patterns
 
+*   given some datetimes 
+    *   visualize the temporal patterns
+        *   daily, weekly, monthly, yearly
+    *   produce some vectors that can be used to find similar patterns via nearest neighbor
+        *   similar patterns
+        *   similar patterns with a phase difference
+        *   similar overall
+    *   find anomalies
+        *   low likelihood events
+        *   should find groups of events instead of single events?
+        
+
 ##  todo
 *   how to find approximate patterns?
 *   the "fraction" stuff is basically a slow fourier transform
@@ -39,4 +51,7 @@
     *   how to balance between the similarities?
     *   equal weight?
     *   harmonic/geometric mean?
-    *   
+*   anomalies
+    *   need to remove the event before seeing how anomalous it is
+    *   how to handle zero probability?
+    *   how to collate over multiple patterns?
