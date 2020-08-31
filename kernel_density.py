@@ -13,6 +13,15 @@ X2 = np.concatenate((np.random.normal(25, 15, int(0.4 * N)),
                      np.random.normal(45, 10, int(0.6 * N))))[:, np.newaxis]
 
 
+def kde(xs, kernel, bandwidth, min_val, max_val, n_samples):
+    # todo: modular
+    plot_range = np.linspace(min_val, max_val, n_samples)[:, np.newaxis]
+    kde = KernelDensity(kernel=kernel, bandwidth=bandwidth)
+    kde.fit(xs)
+    log_dens = kde.score_samples(plot_range)
+    return np.exp(log_dens)
+
+
 def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60, bandwidth=5):
     assert len(labels) == len(data)
 
