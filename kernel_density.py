@@ -4,16 +4,8 @@ import scipy.special
 import scipy.stats
 from sklearn.neighbors import KernelDensity
 
-N = 1000
-np.random.seed(1)
-X1 = np.concatenate((np.random.normal(15, 10, int(0.3 * N)),
-                     np.random.normal(75, 20, int(0.7 * N))))[:, np.newaxis]
 
-X2 = np.concatenate((np.random.normal(25, 15, int(0.4 * N)),
-                     np.random.normal(45, 10, int(0.6 * N))))[:, np.newaxis]
-
-
-def plot_kde(xs, min_val, max_val, kernel='gaussian', bandwidth=None, n_samples=2001):
+def plot_kde(xs, min_val, max_val, kernel='gaussian', bandwidth=None, n_samples=1001):
     assert max_val > min_val
     assert n_samples > 0
 
@@ -26,19 +18,19 @@ def plot_kde(xs, min_val, max_val, kernel='gaussian', bandwidth=None, n_samples=
     kde.fit(xs)
 
     # plot kde
-    kde_xs = np.linspace(min_val, max_val, n_samples)[:, np.newaxis]  # x-values to sample
+    kde_xs = np.linspace(min_val, max_val, n_samples).reshape(-1, 1)  # x-values to sample
     log_density = kde.score_samples(kde_xs)  # log of y-values at each x
     kde_ys = np.exp(log_density)
     return kde_xs[:, 0], kde_ys
 
 
-def plot_kde_modulo(xs, modulo, kernel='gaussian', bandwidth=None, n_samples=2000):
+def plot_kde_modulo(xs, modulo, kernel='gaussian', bandwidth=None, n_samples=1000):
     assert n_samples > 0
 
-    xs_mod = xs % modulo
-    xs_extended = np.concatenate((xs_mod - modulo, xs_mod, xs_mod + modulo))
+    xs_mod = xs % modulo  # mod the data
+    xs_extended = np.concatenate((xs_mod - modulo, xs_mod, xs_mod + modulo))  # wrap around left and right
     kde_xs, kde_ys = plot_kde(xs_extended, 0, modulo, kernel=kernel, bandwidth=bandwidth, n_samples=n_samples + 1)
-    return kde_xs[:-1], kde_ys[:-1]
+    return kde_xs[:-1], kde_ys[:-1]  # don't include the modulo
 
 
 def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60):
@@ -79,9 +71,6 @@ def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60):
             axis.plot(kde_xs, kde_ys, linewidth=1, label=kernel)
             # axis.fill_between(kde_xs, kde_ys, alpha=0.2)
 
-        # plot mean
-        axis.axvline(x=x_mean, color='black', linestyle='-', label='mean')
-
         # # transform data to logit space
         # # import scipy.special
         # l_data = scipy.special.logit((x - min_val) / (max_val - min_val))
@@ -99,6 +88,14 @@ def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60):
         # curve_x = (scipy.special.expit(l_curve_x) * (max_val - min_val)) + min_val
         # axis.plot(curve_x, l_curve_y, color='black', linestyle='-', linewidth=0.5, label='logit-norm')
 
+        # gaussian
+        curve_x = np.linspace(min_val, max_val, 1001)
+        curve_y = len(x) * (max_val / num_bins) * scipy.stats.norm.pdf(curve_x, x_mean, np.sqrt(np.var(x)))
+        axis.plot(curve_x, curve_y, color='black', linestyle='-.', linewidth=1, label='gaussian')
+
+        # plot mean
+        axis.axvline(x=x_mean, color='black', linestyle='-', label='mean')
+
         # skew-normal
         x2_skew = scipy.stats.skew(x)
         x2_skew, x2_mean, x2_sigma = scipy.stats.skewnorm.fit(x, x2_skew)
@@ -106,12 +103,9 @@ def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60):
         curve_y = scipy.stats.skewnorm.pdf((curve_x - x2_mean) / x2_sigma, x2_skew) / x2_sigma
         curve_y *= len(x) * (max_val / num_bins)
         axis.plot(curve_x, curve_y, color='black', linestyle='--', linewidth=1, label='skewnorm')
-        # axis.axvline(x=x2_mean, color='g', linestyle='-', lw=4)
 
-        # gaussian
-        curve_x = np.linspace(min_val, max_val, 1001)
-        curve_y = len(x) * (max_val / num_bins) * scipy.stats.norm.pdf(curve_x, x_mean, np.sqrt(np.var(x)))
-        axis.plot(curve_x, curve_y, color='black', linestyle='-.', linewidth=1, label='gaussian')
+        # # plot skew-normal mean
+        # axis.axvline(x=x2_mean, color='g', linestyle='-', lw=4)
 
         # # shade cutoff area
         # cut = 30  # score at which to cut off
@@ -119,18 +113,18 @@ def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60):
         # axis.axvspan(min_val, cut, color='0.4', alpha=0.5)
 
         # labels and formatting
+        axis.grid(True)
         axis.set_title(label, fontsize=_data_label_font_size)
         axis.set_ylabel(_y_axis_label, fontsize=_axis_font_size)
         axis.set_xlabel(_x_axis_label, fontsize=_axis_font_size)
-        axis.grid(True)
         for tick_label in axis.get_yticklabels():
             tick_label.set_fontsize(_axis_font_size - 1)
         for tick_label in axis.get_xticklabels():
             tick_label.set_fontsize(_axis_font_size - 1)
 
-        # fix y tick label to be actual amounts not probabilities
-        tick_labels = [int(tick) if i % 4 == 0 else '' for i, tick in enumerate(axis.get_yticks())]
-        axis.set_yticklabels(tick_labels)
+        # # fix y tick label to be actual amounts not probabilities
+        # tick_labels = [int(tick) if i % 4 == 0 else '' for i, tick in enumerate(axis.get_yticks())]
+        # axis.set_yticklabels(tick_labels)
 
     fig.tight_layout()
     plt.legend()
@@ -142,5 +136,19 @@ def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60):
     plt.close()
 
 
-draw_histograms([X1, X2], ['x1', 'x2'])
-# draw_histograms([X1], ['x1'])
+if __name__ == '__main__':
+    # generate random stuff
+    N = 1000
+    np.random.seed(1)
+    X1 = np.concatenate((np.random.normal(15, 10, int(0.3 * N)),
+                         np.random.normal(75, 20, int(0.7 * N))))
+
+    X2 = np.concatenate((np.random.normal(25, 15, int(0.4 * N)),
+                         np.random.normal(45, 10, int(0.6 * N))))
+
+    # reshape
+    X1 = X1.reshape(-1, 1)
+    X2 = X2.reshape(-1, 1)
+
+    # plot the stuff
+    draw_histograms([X1, X2], ['x1', 'x2'])
