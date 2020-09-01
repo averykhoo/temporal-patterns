@@ -13,16 +13,35 @@ X2 = np.concatenate((np.random.normal(25, 15, int(0.4 * N)),
                      np.random.normal(45, 10, int(0.6 * N))))[:, np.newaxis]
 
 
-def kde(xs, kernel, bandwidth, min_val, max_val, n_samples):
-    # todo: modular
-    plot_range = np.linspace(min_val, max_val, n_samples)[:, np.newaxis]
+def plot_kde(xs, min_val, max_val, kernel='gaussian', bandwidth=None, n_samples=2001):
+    assert max_val > min_val
+    assert n_samples > 0
+
+    # default bandwidth will be 3% of the overall width
+    if bandwidth is None:
+        bandwidth = (max_val - min_val) * 0.03
+
+    # fit kde kernel
     kde = KernelDensity(kernel=kernel, bandwidth=bandwidth)
     kde.fit(xs)
-    log_dens = kde.score_samples(plot_range)
-    return np.exp(log_dens)
+
+    # plot kde
+    kde_xs = np.linspace(min_val, max_val, n_samples)[:, np.newaxis]  # x-values to sample
+    log_density = kde.score_samples(kde_xs)  # log of y-values at each x
+    kde_ys = np.exp(log_density)
+    return kde_xs[:, 0], kde_ys
 
 
-def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60, bandwidth=5):
+def plot_kde_modulo(xs, modulo, kernel='gaussian', bandwidth=None, n_samples=2000):
+    assert n_samples > 0
+
+    xs_mod = xs % modulo
+    xs_extended = np.concatenate((xs_mod - modulo, xs_mod, xs_mod + modulo))
+    kde_xs, kde_ys = plot_kde(xs_extended, 0, modulo, kernel=kernel, bandwidth=bandwidth, n_samples=n_samples + 1)
+    return kde_xs[:-1], kde_ys[:-1]
+
+
+def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60):
     assert len(labels) == len(data)
 
     plt.cla()
@@ -49,15 +68,16 @@ def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60, bandwid
         assert len(bins) - 1 == len(n) == num_bins, (len(bins), len(n), num_bins)
         assert sum(n) == len(x)
 
-        plot_range = np.linspace(min_val, max_val, 1000)[:, np.newaxis]
-        for k in ['gaussian', 'tophat', 'linear', 'epanechnikov', 'exponential', 'cosine']:
-            kde = KernelDensity(kernel=k, bandwidth=bandwidth)
-            kde.fit(x)
-            log_dens = kde.score_samples(plot_range)
-            plt_vals = np.exp(log_dens) * (len(x) * (float(max_val - min_val) / num_bins))
-            plt_vals[0] = 0
-            plt_vals[-1] = 0
-            axis.plot(plot_range[:, 0], plt_vals, linewidth=1, label=k)
+        # plot kde
+        for kernel in ['tophat', 'gaussian', 'linear', 'epanechnikov', 'exponential', 'cosine']:
+            kde_xs, kde_ys = plot_kde(x, min_val=min_val, max_val=max_val, kernel=kernel)
+
+            # scale the kde curve up to match the histogram
+            kde_ys *= len(x) * float(max_val - min_val) / num_bins
+
+            # plot and fill area
+            axis.plot(kde_xs, kde_ys, linewidth=1, label=kernel)
+            # axis.fill_between(kde_xs, kde_ys, alpha=0.2)
 
         # plot mean
         axis.axvline(x=x_mean, color='black', linestyle='-', label='mean')
@@ -82,20 +102,20 @@ def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60, bandwid
         # skew-normal
         x2_skew = scipy.stats.skew(x)
         x2_skew, x2_mean, x2_sigma = scipy.stats.skewnorm.fit(x, x2_skew)
-        curve_x = np.linspace(min_val, max_val, 1000)
+        curve_x = np.linspace(min_val, max_val, 1001)
         curve_y = scipy.stats.skewnorm.pdf((curve_x - x2_mean) / x2_sigma, x2_skew) / x2_sigma
-        axis.plot(curve_x, len(x) * (max_val / num_bins) * curve_y, color='black', linestyle='--', linewidth=1,
-                  label='skewnorm')
+        curve_y *= len(x) * (max_val / num_bins)
+        axis.plot(curve_x, curve_y, color='black', linestyle='--', linewidth=1, label='skewnorm')
         # axis.axvline(x=x2_mean, color='g', linestyle='-', lw=4)
 
         # gaussian
         curve_x = np.linspace(min_val, max_val, 1001)
-        n_plot = len(x) * (max_val / num_bins) * scipy.stats.norm.pdf(curve_x, x_mean, np.sqrt(np.var(x)))
-        axis.plot(curve_x, n_plot, color='black', linestyle='-.', linewidth=1, label='gaussian')
+        curve_y = len(x) * (max_val / num_bins) * scipy.stats.norm.pdf(curve_x, x_mean, np.sqrt(np.var(x)))
+        axis.plot(curve_x, curve_y, color='black', linestyle='-.', linewidth=1, label='gaussian')
 
         # # shade cutoff area
         # cut = 30  # score at which to cut off
-        # # axis.axvline(x=cut, color='0.7', linestyle='-')
+        # axis.axvline(x=cut, color='0.7', linestyle='-')
         # axis.axvspan(min_val, cut, color='0.4', alpha=0.5)
 
         # labels and formatting
@@ -123,3 +143,4 @@ def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60, bandwid
 
 
 draw_histograms([X1, X2], ['x1', 'x2'])
+# draw_histograms([X1], ['x1'])
