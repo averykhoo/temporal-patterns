@@ -39,7 +39,9 @@ def plot_kde_modulo(xs, modulo, kernel='gaussian', bandwidth=None, n_samples=100
     xs_mod = xs % modulo  # mod the data
     xs_extended = np.concatenate((xs_mod - modulo, xs_mod, xs_mod + modulo))  # wrap around left and right
     kde_xs, kde_ys = plot_kde(xs_extended, 0, modulo, kernel=kernel, bandwidth=bandwidth, n_samples=n_samples + 1)
-    return kde_xs[:-1], kde_ys[:-1]  # don't include the modulo
+    kde_xs = kde_xs[:-1]  # don't include the modulo
+    kde_ys = kde_ys[:-1] * 3  # scale up since this in the middle third
+    return kde_xs, kde_ys
 
 
 def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60):
@@ -134,6 +136,7 @@ def draw_histograms(data, labels, min_val=0.0, max_val=100, num_bins=60):
         # # fix y tick label to be actual amounts not probabilities
         # tick_labels = [int(tick) if i % 4 == 0 else '' for i, tick in enumerate(axis.get_yticks())]
         # axis.set_yticklabels(tick_labels)
+        axis.set_xlim(left=min_val, right=max_val)
 
     fig.tight_layout()
     plt.legend()
