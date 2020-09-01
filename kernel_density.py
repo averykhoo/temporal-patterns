@@ -9,6 +9,12 @@ def plot_kde(xs, min_val, max_val, kernel='gaussian', bandwidth=None, n_samples=
     assert max_val > min_val
     assert n_samples > 0
 
+    # convert to numpy array if necessary
+    if not isinstance(xs, np.ndarray):
+        xs = np.array(xs)
+    if len(xs.shape) == 1:
+        xs = xs.reshape(-1, 1)
+
     # default bandwidth will be 3% of the overall width
     if bandwidth is None:
         bandwidth = (max_val - min_val) * 0.03
@@ -26,6 +32,9 @@ def plot_kde(xs, min_val, max_val, kernel='gaussian', bandwidth=None, n_samples=
 
 def plot_kde_modulo(xs, modulo, kernel='gaussian', bandwidth=None, n_samples=1000):
     assert n_samples > 0
+    if not isinstance(xs, np.ndarray):
+        xs = np.array(xs)
+        xs.reshape(-1, 1)
 
     xs_mod = xs % modulo  # mod the data
     xs_extended = np.concatenate((xs_mod - modulo, xs_mod, xs_mod + modulo))  # wrap around left and right
