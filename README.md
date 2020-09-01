@@ -31,7 +31,9 @@
     *   count sessions patterns too
         *   start, duration
 *   visualizations better than numbers
-    *   month/day/hour heatmap
+    *   full week???
+    *   24h polar plot for days
+    *   day/hour heatmap for weeks, month/week heatmap for years
         *   https://infovis-mannheim.de/viavelox/
         *   https://infovis-mannheim.de/viavelox/assets/img/matrix.jpg
         *   https://infovis-mannheim.de/viavelox/assets/img/patterns1.jpg
@@ -51,11 +53,9 @@
     *   can use ann library 
         *   try [scann](https://github.com/google-research/google-research/tree/master/scann)
         *   or [annoy](https://anaconda.org/conda-forge/python-annoy)
-*   lookup similarity separately for week, month, year, etc
-    *   how to balance between the similarities?
-    *   probably use `general_mean(*xs, dim=0.1)` where `x` (similarity score) is between 0 and 1
-        *   equivalent to `lambda xs: (sum(x ** 0.1 for x in xs) / len(xs)) ** 10` for some tuple/list
+    *   lookup similarity separately for week, month, year, etc
 *   anomalies
     *   need to remove the event before seeing how anomalous it is
     *   how to handle zero probability?
     *   how to collate over multiple patterns?
+    

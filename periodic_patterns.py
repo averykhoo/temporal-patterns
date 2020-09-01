@@ -81,9 +81,13 @@ class TimeStampSet:
         self.year_since_epoch = dict()
         self.two_year_since_epoch = dict()
 
+        self.__kdes = None
+
     def add(self, timestamp: datetime.datetime):
         # replace timezone
         timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
+
+        self.__kdes = None
 
         # count
         timestamp_idx = len(self.timestamps)
@@ -203,7 +207,10 @@ class TimeStampSet:
 
         return out
 
-    def fractions(self):
+    def fractions(self, dim=1000):
+        if self.__kdes is not None:
+            return self.__kdes
+
         period_fractions = {
             'days':         self.day_fraction,
             'weeks':        self.week_fraction,
@@ -221,10 +228,11 @@ class TimeStampSet:
             all_fractions = []
             for fraction, items in period_dict.items():
                 all_fractions.extend([fraction] * len(items))
-            kde_xs, kde_ys = plot_kde_modulo(all_fractions, modulo=1)
+            kde_xs, kde_ys = plot_kde_modulo(all_fractions, modulo=1, n_samples=dim)
             kdes[period_name] = (kde_xs, kde_ys)
             kdes[period_name + '_data'] = all_fractions
 
+        self.__kdes = kdes
         return kdes
 
     def plot_patterns(self):
@@ -480,7 +488,6 @@ if __name__ == '__main__':
     for timestamp in timestamps:
         tss.add(timestamp)
 
-
     test_timestamps = [datetime.datetime(2020, 5, 1, 11, 48),
                        datetime.datetime(2020, 5, 2, 11, 48),
                        datetime.datetime(2020, 5, 3, 11, 48),
@@ -514,6 +521,5 @@ if __name__ == '__main__':
                        ]
     for timestamp in test_timestamps:
         print(timestamp, tss.likelihood(timestamp)[0])
-
 
     tss.plot_patterns()
