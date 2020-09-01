@@ -40,8 +40,12 @@
         *   https://infovis-mannheim.de/viavelox/assets/img/design2.jpg
         *   https://www.vizwiz.com/2018/06/tfl-cycle-hire.html
 *   convert pattern (eg fraction) into vector
-    *   maybe 480d for a month? (30 days *  24 hours)
-    *   concatenate the 3 sets of the pattern, apply kde, then take the middle part
+    *   dimension=360 should be enough, resolution is:
+        *   years:  1 day
+        *   months: 2 hours
+        *   weeks: 28 minutes
+        *   days:   4 minutes
+        *   or maybe have variable dimension for each?
     *   can rotate to match patterns that are offset
         *   either store many more patterns or do many more lookups
     *   can use ann library 
@@ -50,6 +54,7 @@
 *   lookup similarity separately for week, month, year, etc
     *   how to balance between the similarities?
     *   probably use `general_mean(*xs, dim=0.1)` where `x` (similarity score) is between 0 and 1
+        *   equivalent to `lambda xs: (sum(x ** 0.1 for x in xs) / len(xs)) ** 10` for some tuple/list
 *   anomalies
     *   need to remove the event before seeing how anomalous it is
     *   how to handle zero probability?
