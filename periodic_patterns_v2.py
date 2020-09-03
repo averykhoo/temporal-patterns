@@ -1,11 +1,13 @@
 import bisect
 import datetime
+import math
 from dataclasses import dataclass
 from dataclasses import field
 from functools import lru_cache
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Set
 from typing import Tuple
 from typing import Union
 
@@ -57,22 +59,70 @@ month_lengths = [
 @dataclass(eq=False)
 class ModuloPattern:
     name: Optional[str] = None
-    x_axis_name: Optional[str] = None
     x_axis_labels: Optional[List[str]] = None
-    modulo: Union[int, float] = 1
+    x_axis_name: Optional[str] = None
     vector_dimension: int = 128
+    modulo: Union[int, float] = 1
 
-    all_remainders: List[float] = field(default_factory=list, init=False)  # in the interval [0, 1)
-    quotients: Dict[float, List] = field(default_factory=dict, init=False)
-    remainders: Dict[float, List] = field(default_factory=dict, init=False)  # in the interval [0, 1)
+    # min, max, fractional parts
+    min: float = field(default=math.inf, init=False, repr=False)
+    max: float = field(default=-math.inf, init=False, repr=False)
+    remainders: List[float] = field(default_factory=list, init=False, repr=False)  # in the interval [0, 1)
+
+    # are these even needed
+    _remainders: Dict[float, List] = field(default_factory=dict, init=False)  # in the interval [0, 1)
+    _quotients: Dict[float, List] = field(default_factory=dict, init=False)
+
+    # cached values
     __kde: Dict[int, Tuple[Tuple[float], Tuple[float]]] = field(default_factory=dict, init=False, repr=False)
     __vector: Tuple[float] = field(default_factory=list, init=False, repr=False)
 
     def __post_init__(self):
+        # check name
+        if self.name is not None:
+            if not isinstance(self.name, str):
+                raise TypeError(self.name)
+            elif not self.name:
+                self.name = None
+
+        # check x_axis_name
+        if self.x_axis_name is not None:
+            if not isinstance(self.x_axis_name, str):
+                raise TypeError(self.x_axis_name)
+            elif not self.x_axis_name:
+                self.x_axis_name = None
+
+        # check labels
+        if self.x_axis_labels is not None:
+            self.x_axis_labels = list(map(str, self.x_axis_labels))
+
+        # check modulo
         if self.modulo == 0:
             raise ValueError('modulo must not be zero')
+
+        # check vector dimension
         if not (isinstance(self.vector_dimension, int) and self.vector_dimension > 0):
             raise TypeError(f'vector dimension must be a positive integer, got {self.vector_dimension}')
+
+    def add(self, value, item=None):
+        # reset kde and vector
+        self.__kde = dict()
+        self.__vector = tuple()
+
+        self.min = min(value, self.min)
+        self.max = max(value, self.max)
+
+        # add item
+        quotient, remainder = divmod(value, self.modulo)
+        self.remainders.append(remainder)
+        self._quotients.setdefault(quotient, []).append(item)
+        self._remainders.setdefault(remainder, []).append(item)
+
+    def kde(self, dim=1000):
+        if dim not in self.__kde:
+            kde_xs, kde_ys = plot_kde_modulo(self.remainders, modulo=1, n_samples=dim)
+            self.__kde[dim] = (tuple(kde_xs), tuple(kde_ys))
+        return self.__kde[dim]
 
     @property
     def vector(self) -> Tuple[float]:
@@ -82,21 +132,14 @@ class ModuloPattern:
             self.__vector = tuple(elem / vector_length for elem in kde_ys)
         return self.__vector
 
-    def add(self, value, item=None):
-        # reset kde and vector
-        self.__kde = dict()
-        self.__vector = tuple()
-
-        # add item
-        quotient, remainder = divmod(value, self.modulo)
-        self.all_remainders.append(remainder)
-        self.quotients.setdefault(quotient, []).append(item)
-        self.remainders.setdefault(remainder, []).append(item)
+    @property
+    def n_periods(self):
+        return max(0, (self.max - self.min) / self.modulo)
 
     def consecutive(self, min_length=2):
         out = []
         buffer = []
-        for quotient in sorted(self.quotients.keys()):
+        for quotient in sorted(self._quotients.keys()):
             if not buffer:
                 buffer.append(quotient)
             elif quotient - 1 == buffer[-1]:
@@ -107,13 +150,7 @@ class ModuloPattern:
                 buffer = []
         return out
 
-    def kde(self, dim=1000):
-        if dim not in self.__kde:
-            kde_xs, kde_ys = plot_kde_modulo(self.all_remainders, modulo=1, n_samples=dim)
-            self.__kde[dim] = (tuple(kde_xs), tuple(kde_ys))
-        return self.__kde[dim]
-
-    def plot_patterns(self, axis: Optional[plt.Axes] = None, color: str = 'cyan'):
+    def plot(self, axis: Optional[plt.Axes] = None, color: str = 'blue'):
         if axis is None:
             fig, ax = plt.subplots()
         else:
@@ -128,19 +165,18 @@ class ModuloPattern:
         # if we have the data to plot a histogram
         if self.x_axis_labels is not None:
             # scale the kde curve horizontally, to match the right number of ticks
-            kde_xs *= len(self.x_axis_labels)
+            kde_xs = [elem * len(self.x_axis_labels) for elem in kde_xs]
 
             # scale the kde curve vertically, to match the histogram height
-            kde_ys *= len(self.all_remainders)
-            kde_ys /= len(self.x_axis_labels)
+            kde_ys = [elem * len(self.remainders) / len(self.x_axis_labels) for elem in kde_ys]
 
             # draw histogram
-            ax.hist([elem * len(self.x_axis_labels) for elem in self.all_remainders],
+            ax.hist([elem * len(self.x_axis_labels) for elem in self.remainders],
                     len(self.x_axis_labels),
                     density=False,
                     range=(0, len(self.x_axis_labels)),
                     color=color,
-                    alpha=0.8)
+                    alpha=0.5)
 
         # plot and fill area
         ax.plot(kde_xs, kde_ys, color=color, linewidth=1)
@@ -154,13 +190,17 @@ class ModuloPattern:
         if self.x_axis_name is not None:
             ax.set_xlabel(self.x_axis_name)
 
-        # fix y tick label to be labels not numbers
+        # set x tick labels
         if self.x_axis_labels is not None:
             ax.set_xticks(list(range(1, len(self.x_axis_labels) + 1)))
             ax.set_xticklabels(self.x_axis_labels)
-            ax.set_xlim(left=0, right=len(self.x_axis_labels))
-        else:
-            ax.set_xlim(left=0, right=1)
+
+            # center each label
+            for label in ax.get_xticklabels():
+                label.set_horizontalalignment('right')
+
+        # set horizontal view limits
+        ax.set_xlim(left=0, right=len(self.x_axis_labels) if self.x_axis_labels is not None else 1)
 
         if fig is not None:
             fig.tight_layout()
@@ -173,7 +213,7 @@ class ModuloPattern:
         return self.kde()[1][idx]
 
 
-def timestamp_day_of_week_of_month(timestamp: datetime.datetime):
+def timestamp_hour_of_day_of_week_of_month(timestamp: datetime.datetime):
     # nth 7-day-period of month (starts at 1)
     n = ((timestamp.day + 1) // 7) + 1
 
@@ -183,7 +223,7 @@ def timestamp_day_of_week_of_month(timestamp: datetime.datetime):
     # day of week (starts at Monday)
     day_of_week = days_of_week[timestamp.weekday()]
 
-    return n, full_week, day_of_week
+    return timestamp.hour, n, full_week, day_of_week
 
 
 @lru_cache(maxsize=65536)
@@ -245,281 +285,106 @@ def timestamp_n_year(timestamp: datetime.datetime, n: int = 1) -> float:
 
 
 class TimeStampSetV2:
-    def __init__(self, default_session_length=datetime.timedelta(hours=48)):
-        self.default_session_length = default_session_length
+    def __init__(self):
+        # all the timestamps will be indexed here
+        self.timestamps: List[datetime.datetime] = []
 
-        self.timestamps = []
+        # n-th day of month, n-th week of month
+        self.hour_day: Dict[Tuple[int, str], Set[int]] = dict()
+        self.n_day: Dict[Tuple[int, str], Set[int]] = dict()
+        self.n_week: Dict[Tuple[int, str], Set[int]] = dict()
 
-        self.hour_of_day = dict()
+        # patterns
+        self.day = ModuloPattern(name='',  # 'day',
+                                 x_axis_labels=['1am', '2am', '3am', '4am', '5am', '6am',
+                                                '7am', '8am', '9am', '10am', '11am', '12nn',
+                                                '1pm', '2pm', '3pm', '4pm', '5pm', '6pm',
+                                                '7pm', '8pm', '9pm', '10pm', '11pm', '12mn'],
+                                 x_axis_name='')  # 'hour')
+        self.week = ModuloPattern(name='',  # 'week',
+                                  x_axis_labels=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                                  x_axis_name='')  # 'day')
+        self.two_week = ModuloPattern(name='',  # 'fortnight',
+                                      x_axis_labels=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] * 2,
+                                      x_axis_name='')  # 'day')
+        self.month = ModuloPattern(name='',  # 'month',
+                                   x_axis_labels=['early', 'mid', 'late'],
+                                   x_axis_name='')  # '10-day period')
+        self.two_month = ModuloPattern(name='',  # '2-month',
+                                       x_axis_labels=['Odd', 'Even'],
+                                       x_axis_name='')  # 'month')
+        self.three_month = ModuloPattern(name='',  # 'quarter',
+                                         x_axis_labels=['Jan/May/Sep', 'Feb/Jun/Oct', 'Mar/Jul/Nov', 'Apr/Aug/Dec'],
+                                         x_axis_name='')  # 'month')
+        self.six_month = ModuloPattern(name='',  # '6-month',
+                                       x_axis_labels=['Jan/Jul', 'Feb/Aug', 'Mar/Sep',
+                                                      'Apr/Oct', 'May/Nov', 'Jun/Dec'],
+                                       x_axis_name='')  # 'month')
+        self.year = ModuloPattern(name='',  # 'year',
+                                  x_axis_labels=['Jan', 'Feb', 'Mar',
+                                                 'Apr', 'May', 'Jun',
+                                                 'Jul', 'Aug', 'Sep',
+                                                 'Oct', 'Nov', 'Dec'],
+                                  x_axis_name='')  # 'month')
+        self.two_year = ModuloPattern(name='',  # '2-year',
+                                      x_axis_labels=['Jan', 'Feb', 'Mar',
+                                                     'Apr', 'May', 'Jun',
+                                                     'Jul', 'Aug', 'Sep',
+                                                     'Oct', 'Nov', 'Dec'] * 2,
+                                      x_axis_name='')  # 'month')
 
-        self.day_of_week = dict()
-        self.nth_day_of_week = dict()
-        self.full_week = dict()
-
-        self.day_fraction = dict()
-        self.week_fraction = dict()
-        self.two_week_fraction = dict()
-        self.month_fraction = dict()
-        self.two_month_fraction = dict()
-        self.three_month_fraction = dict()
-        self.six_month_fraction = dict()
-        self.year_fraction = dict()
-        self.two_year_fraction = dict()
-
-        self.month = dict()
-        self.month_part = dict()
-
-        self.day_since_epoch = dict()
-        self.week_since_epoch = dict()
-        self.two_week_since_epoch = dict()
-        self.month_since_epoch = dict()
-        self.two_month_since_epoch = dict()
-        self.three_month_since_epoch = dict()
-        self.six_month_since_epoch = dict()
-        self.year_since_epoch = dict()
-        self.two_year_since_epoch = dict()
-
-        self.__kdes = None
+    @property
+    def _patterns(self):
+        _patterns = [self.day,
+                     self.week, self.two_week,
+                     self.month, self.two_month, self.three_month, self.six_month,
+                     self.year, self.two_year,
+                     ]
+        return [_pattern for _pattern in _patterns if _pattern.n_periods >= 3]
 
     def add(self, timestamp: datetime.datetime):
         # replace timezone
         timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
 
-        self.__kdes = None
-
-        # count
+        # add to index
         timestamp_idx = len(self.timestamps)
         self.timestamps.append(timestamp)
         assert self.timestamps[timestamp_idx] is timestamp, 'race condition?'
 
-        # time of day (hour)
-        self.hour_of_day.setdefault(timestamp.hour, []).append(timestamp_idx)
+        # count
+        hour, n, full_week, day_of_week = timestamp_hour_of_day_of_week_of_month(timestamp)
+        self.hour_day.setdefault((hour, day_of_week), set()).add(timestamp_idx)
+        self.n_day.setdefault((n, day_of_week), set()).add(timestamp_idx)
+        self.n_week.setdefault((full_week, day_of_week), set()).add(timestamp_idx)
 
-        # day of week (starts at Monday)
-        day_of_week = days_of_week[timestamp.weekday()]
-        self.day_of_week.setdefault(day_of_week, []).append(timestamp_idx)
+        # modular patterns
+        self.day.add(timestamp_day(timestamp))
+        self.week.add(timestamp_week(timestamp))
+        self.two_week.add(timestamp_two_week(timestamp))
+        self.month.add(timestamp_n_month(timestamp))
+        self.two_month.add(timestamp_n_month(timestamp, n=2))
+        self.three_month.add(timestamp_n_month(timestamp, n=3))
+        self.six_month.add(timestamp_n_month(timestamp, n=6))
+        self.year.add(timestamp_n_year(timestamp))
+        self.two_year.add(timestamp_n_year(timestamp, n=2))
 
-        # nth 7-day-period of month (starts at 1)
-        n = ((timestamp.day + 1) // 7) + 1
-        self.nth_day_of_week.setdefault((n, day_of_week), []).append(timestamp_idx)
+    def consecutive(self, min_length=2):
+        return {_pattern.name: _pattern.consecutive(min_length=min_length) for _pattern in self._patterns}
 
-        # n-th full week of month (starts at 1, can be 0)
-        full_week = (timestamp.day + 6 - timestamp.weekday()) // 7
-        self.full_week.setdefault(full_week, []).append(timestamp_idx)
+    def kdes(self, dim=1000):
+        return {_pattern.name: _pattern.kde(dim=dim) for _pattern in self._patterns}
 
-        # day fraction (0 to less than 1)
-        _start = timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
-        _end = (timestamp + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        day_fraction = (timestamp - _start).total_seconds() / (_end - _start).total_seconds()
-        day_since_epoch = datetime.timedelta(seconds=timestamp.timestamp()).days  # 1970-01-02 -> 1
-        self.day_fraction.setdefault(day_fraction, []).append(timestamp_idx)
-        self.day_since_epoch.setdefault(day_since_epoch, []).append(timestamp_idx)
+    def fractions(self):
+        return {_pattern.name: sorted(_pattern.remainders) for _pattern in self._patterns}
 
-        # week fraction (0 to less than 1)
-        week_fraction = (timestamp.weekday() + day_fraction) / 7
-        week_since_epoch = (day_since_epoch + 3) // 7  # 1st Monday after epoch (1970-01-05) -> 1
-        self.week_fraction.setdefault(week_fraction, []).append(timestamp_idx)
-        self.week_since_epoch.setdefault(week_since_epoch, []).append(timestamp_idx)
-
-        # fortnight fraction
-        two_week_fraction = ((day_since_epoch + 3) % 14 + day_fraction) / 14
-        two_week_since_epoch = week_since_epoch // 2
-        self.two_week_fraction.setdefault(two_week_fraction, []).append(timestamp_idx)
-        self.two_week_since_epoch.setdefault(two_week_since_epoch, []).append(timestamp_idx)
-
-        # month fraction (0 to less than 1)
-        _start = timestamp.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        _end = (_start + datetime.timedelta(days=35)).replace(day=1)
-        month_fraction = (timestamp - _start).total_seconds() / (_end - _start).total_seconds()
-        month_since_epoch = (timestamp.year - 1970) * 12 + timestamp.month - 1
-        self.month_fraction.setdefault(month_fraction, []).append(timestamp_idx)
-        self.month_since_epoch.setdefault(month_since_epoch, []).append(timestamp_idx)
-
-        # which month, and is it early or late in the month
-        self.month.setdefault(month_names[timestamp.month - 1], []).append(timestamp_idx)
-        if month_fraction < 0.33:
-            self.month_part.setdefault('early', []).append(timestamp_idx)
-        elif month_fraction < 0.67:
-            self.month_part.setdefault('mid', []).append(timestamp_idx)
-        else:
-            assert month_fraction < 1
-            self.month_part.setdefault('late', []).append(timestamp_idx)
-
-        # bimonthly fraction (0 to less than 1)
-        two_month_fraction = (month_since_epoch % 2 + month_fraction) / 2
-        two_month_since_epoch = month_since_epoch // 2
-        self.two_month_fraction.setdefault(two_month_fraction, []).append(timestamp_idx)
-        self.two_month_since_epoch.setdefault(two_month_since_epoch, []).append(timestamp_idx)
-
-        # quarterly fraction (0 to less than 1)
-        three_month_fraction = (month_since_epoch % 4 + month_fraction) / 4
-        three_month_since_epoch = month_since_epoch // 4
-        self.three_month_fraction.setdefault(three_month_fraction, []).append(timestamp_idx)
-        self.three_month_since_epoch.setdefault(three_month_since_epoch, []).append(timestamp_idx)
-
-        # biannual fraction (0 to less than 1)
-        six_month_fraction = (month_since_epoch % 6 + month_fraction) / 6
-        six_month_since_epoch = month_since_epoch // 6
-        self.six_month_fraction.setdefault(six_month_fraction, []).append(timestamp_idx)
-        self.six_month_since_epoch.setdefault(six_month_since_epoch, []).append(timestamp_idx)
-
-        # year fraction (0 to less than 1)
-        _start = timestamp.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-        _end = _start.replace(year=timestamp.year + 1)
-        year_fraction = (timestamp - _start).total_seconds() / (_end - _start).total_seconds()
-        year_since_epoch = timestamp.year - 1970
-        self.year_fraction.setdefault(year_fraction, []).append(timestamp_idx)
-        self.year_since_epoch.setdefault(year_since_epoch, []).append(timestamp_idx)
-
-        # biennial fraction (0 to less than 1)
-        two_year_fraction = (year_since_epoch % 2 + year_fraction) / 2
-        two_year_since_epoch = year_since_epoch // 2
-        self.two_year_fraction.setdefault(two_year_fraction, []).append(timestamp_idx)
-        self.two_year_since_epoch.setdefault(two_year_since_epoch, []).append(timestamp_idx)
-
-    def consecutive(self):
-        periods_since_epoch = {
-            'days':         self.day_since_epoch,
-            'weeks':        self.week_since_epoch,
-            'two_weeks':    self.two_week_since_epoch,
-            'months':       self.month_since_epoch,
-            'two_months':   self.two_month_since_epoch,
-            'three_months': self.three_month_since_epoch,
-            'six_months':   self.six_month_since_epoch,
-            'years':        self.year_since_epoch,
-            'two_years':    self.two_year_since_epoch,
-        }
-
-        out = dict()
-        for period_name, period_dict in periods_since_epoch.items():
-            buffer = []
-            for _period in sorted(period_dict.keys()):
-                if not buffer:
-                    buffer.append(_period)
-                elif _period - buffer[0] == 1:
-                    buffer.append(_period)
-                else:
-                    if len(buffer) > 1:
-                        out.setdefault(period_name, []).append(buffer)
-                    buffer = []
-
-        return out
-
-    def fractions(self, dim=1000):
-        if self.__kdes is not None:
-            return self.__kdes
-
-        period_fractions = {
-            'days':         self.day_fraction,
-            'weeks':        self.week_fraction,
-            'two_weeks':    self.two_week_fraction,
-            'months':       self.month_fraction,
-            'two_months':   self.two_month_fraction,
-            'three_months': self.three_month_fraction,
-            'six_months':   self.six_month_fraction,
-            'years':        self.year_fraction,
-            'two_years':    self.two_year_fraction,
-        }
-
-        kdes = dict()
-        for period_name, period_dict in period_fractions.items():
-            all_fractions = []
-            for fraction, items in period_dict.items():
-                all_fractions.extend([fraction] * len(items))
-            kde_xs, kde_ys = plot_kde_modulo(all_fractions, modulo=1, n_samples=dim)
-            kdes[period_name] = (kde_xs, kde_ys)
-            kdes[period_name + '_data'] = all_fractions
-
-        self.__kdes = kdes
-        return kdes
-
-    def plot_patterns(self):
+    def plot(self):
         plt.cla()
         plt.clf()
         plt.close()
 
-        period_x_axis = {
-            'days':   ('day', 'hours', 24),
-            'weeks':  ('week', 'days', 7),
-            # 'two_weeks':    ('fortnight', 'days', 14),
-            'months': ('month', 'period', 3),  # early, mid, late
-            # 'two_months':   ('two months', 'weeks', 9),
-            # 'three_months': ('quarter', 'months', 3),
-            # 'six_months':   ('six months', 'months', 6),
-            'years':  ('year', 'months', 12),
-            # 'two_years':    ('two years', 'months', 24),
-        }
-
-        _y_axis_label = 'count'
-        _axis_font_size = 11
-        _data_label_font_size = _axis_font_size + 2
-
-        fig, axes = plt.subplots(nrows=len(period_x_axis))
-
-        kdes = self.fractions()
-
-        # sorts by x_mean
-        for (period_name, (label, x_axis_label, x_axis_scale)), axis in zip(period_x_axis.items(), axes.flatten()):
-
-            histogram_labels = None
-            histogram_data = None
-            if period_name == 'days':
-                histogram_labels = list(range(1, 25))  # 1 - 24 (int)
-                histogram_data = self.hour_of_day
-            elif period_name == 'weeks':
-                histogram_labels = days_of_week  # mon - sun
-                histogram_data = self.day_of_week
-            elif period_name == 'two_weeks':
-                histogram_labels = days_of_week * 2
-            elif period_name == 'months':
-                histogram_labels = ['early', 'mid', 'late']
-                histogram_data = self.month_part
-            elif period_name == 'years':
-                histogram_labels = month_names  # jan - dec
-                histogram_data = self.month
-
-            # plot kde
-            kde_xs, kde_ys = kdes[period_name]
-
-            # scale the kde curve to match the right number of ticks
-            kde_xs *= x_axis_scale
-
-            # # scale the kde curve up to match the histogram
-            kde_ys *= len(kdes[period_name + '_data'])
-            kde_ys /= len(histogram_labels)
-
-            # plot histogram
-            if histogram_data is not None:
-                axis.hist([elem * len(histogram_labels) for elem in kdes[period_name + '_data']],
-                          len(histogram_labels),
-                          density=0,
-                          range=(0, len(histogram_labels)),
-                          color='cyan',
-                          alpha=0.8,
-                          label='histogram')
-
-            # plot and fill area
-            axis.plot(kde_xs, kde_ys, linewidth=1, label='kde')
-            axis.fill_between(kde_xs, kde_ys, alpha=0.2)
-
-            # labels and formatting
-            axis.grid(True)
-            # axis.set_title(label, fontsize=_data_label_font_size)
-            # axis.set_ylabel(_y_axis_label, fontsize=_axis_font_size)
-            # axis.set_xlabel(x_axis_label, fontsize=_axis_font_size)
-            # for tick_label in axis.get_yticklabels():
-            #     tick_label.set_fontsize(_axis_font_size - 1)
-            # for tick_label in axis.get_xticklabels():
-            #     tick_label.set_fontsize(_axis_font_size - 1)
-
-            # fix y tick label to be labels not numbers
-            if histogram_labels is not None:
-                # print(histogram_labels, axis.get_xticks())
-                # tick_labels = [histogram_labels[int(tick)] if float(tick) % 1 == 0 else ''
-                #                for _, tick in enumerate(axis.get_xticks())]
-                axis.set_xticks(list(range(1, len(histogram_labels) + 1)))
-                axis.set_xticklabels(histogram_labels)
-                axis.set_xlim(left=0, right=len(histogram_labels))
+        fig, axes = plt.subplots(nrows=len(self._patterns))
+        for _pattern, axis in zip(self._patterns, axes.flatten() if len(self._patterns) > 1 else [axes]):
+            _pattern.plot(axis)
 
         fig.tight_layout()
         # plt.legend()
@@ -531,193 +396,113 @@ class TimeStampSetV2:
         plt.close()
 
     def likelihood(self, *timestamps: datetime.datetime):
-
         timestamps = sorted(timestamps)
 
-        kdes = self.fractions()
-
         timestamps_likelihoods = []
-
         for timestamp in timestamps:
-            timestamp_likelihood = []
-
             # replace timezone
             timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
 
-            # time of day (hour)
-            hour_of_day = timestamp.hour
-
-            # day of week (starts at Monday)
-            day_of_week = days_of_week[timestamp.weekday()]
-
-            # nth 7-day-period of month (starts at 1)
-            n = ((timestamp.day + 1) // 7) + 1
-            nth_day_of_week = (n, day_of_week)
-
-            # n-th full week of month (starts at 1, can be 0)
-            full_week = (timestamp.day + 6 - timestamp.weekday()) // 7
-
-            # day fraction (0 to less than 1)
-            _start = timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
-            _end = (timestamp + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-            day_fraction = (timestamp - _start).total_seconds() / (_end - _start).total_seconds()
-            day_since_epoch = datetime.timedelta(seconds=timestamp.timestamp()).days  # 1970-01-02 -> 1
-
-            idx = bisect.bisect_left(kdes['days'][0], day_fraction) % len(kdes['days'][0])
-            timestamp_likelihood.append(kdes['days'][1][idx])
-
-            # week fraction (0 to less than 1)
-            week_fraction = (timestamp.weekday() + day_fraction) / 7
-            week_since_epoch = (day_since_epoch + 3) // 7  # 1st Monday after epoch (1970-01-05) -> 1
-
-            idx = bisect.bisect_left(kdes['weeks'][0], week_fraction) % len(kdes['weeks'][0])
-            timestamp_likelihood.append(kdes['weeks'][1][idx])
-
-            # fortnight fraction
-            two_week_fraction = ((day_since_epoch + 3) % 14 + day_fraction) / 14
-            two_week_since_epoch = week_since_epoch // 2
-
-            idx = bisect.bisect_left(kdes['two_weeks'][0], two_week_fraction) % len(kdes['two_weeks'][0])
-            timestamp_likelihood.append(kdes['two_weeks'][1][idx])
-
-            # month fraction (0 to less than 1)
-            _start = timestamp.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            _end = (_start + datetime.timedelta(days=35)).replace(day=1)
-            month_fraction = (timestamp - _start).total_seconds() / (_end - _start).total_seconds()
-            month_since_epoch = (timestamp.year - 1970) * 12 + timestamp.month - 1
-
-            idx = bisect.bisect_left(kdes['months'][0], month_fraction) % len(kdes['months'][0])
-            timestamp_likelihood.append(kdes['months'][1][idx])
-
-            # which month, and is it early or late in the month
-            month = month_names[timestamp.month - 1]
-
-            if month_fraction < 0.33:
-                month_part = 'early'
-            elif month_fraction < 0.67:
-                month_part = 'mid'
-            else:
-                assert month_fraction < 1
-                month_part = 'end'
-
-            # bimonthly fraction (0 to less than 1)
-            two_month_fraction = (month_since_epoch % 2 + month_fraction) / 2
-
-            idx = bisect.bisect_left(kdes['two_months'][0], two_month_fraction) % len(kdes['two_months'][0])
-            timestamp_likelihood.append(kdes['two_months'][1][idx])
-
-            # quarterly fraction (0 to less than 1)
-            three_month_fraction = (month_since_epoch % 4 + month_fraction) / 4
-
-            idx = bisect.bisect_left(kdes['three_months'][0], three_month_fraction) % len(kdes['three_months'][0])
-            timestamp_likelihood.append(kdes['three_months'][1][idx])
-
-            # biannual fraction (0 to less than 1)
-            six_month_fraction = (month_since_epoch % 6 + month_fraction) / 6
-
-            idx = bisect.bisect_left(kdes['six_months'][0], six_month_fraction) % len(kdes['six_months'][0])
-            timestamp_likelihood.append(kdes['six_months'][1][idx])
-
-            # year fraction (0 to less than 1)
-            _start = timestamp.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-            _end = _start.replace(year=timestamp.year + 1)
-            year_fraction = (timestamp - _start).total_seconds() / (_end - _start).total_seconds()
-            year_since_epoch = timestamp.year - 1970
-
-            idx = bisect.bisect_left(kdes['years'][0], year_fraction) % len(kdes['years'][0])
-            timestamp_likelihood.append(kdes['years'][1][idx])
-
-            # biennial fraction (0 to less than 1)
-            two_year_fraction = (year_since_epoch % 2 + year_fraction) / 2
-
-            idx = bisect.bisect_left(kdes['two_years'][0], two_year_fraction) % len(kdes['two_years'][0])
-            timestamp_likelihood.append(kdes['two_years'][1][idx])
-
-            timestamps_likelihoods.append(timestamp_likelihood)
+            # modular patterns
+            timestamps_likelihoods.append([
+                self.day.likelihood(timestamp_day(timestamp)),
+                self.week.likelihood(timestamp_week(timestamp)),
+                self.two_week.likelihood(timestamp_two_week(timestamp)),
+                self.month.likelihood(timestamp_n_month(timestamp)),
+                self.two_month.likelihood(timestamp_n_month(timestamp, n=2)),
+                self.three_month.likelihood(timestamp_n_month(timestamp, n=3)),
+                self.six_month.likelihood(timestamp_n_month(timestamp, n=6)),
+                self.year.likelihood(timestamp_n_year(timestamp)),
+                self.two_year.likelihood(timestamp_n_year(timestamp, n=2)),
+            ])
 
         # return timestamps_likelihoods
         return list(map(lambda xs: (sum(x ** 0.1 for x in xs) / len(xs)) ** 10, timestamps_likelihoods))
 
-    def sessions(self):
-        raise NotImplementedError
-
 
 if __name__ == '__main__':
-    timestamps = [datetime.datetime(2020, 1, 1, 12, 23),
-                  datetime.datetime(2020, 1, 1, 12, 34),
-                  datetime.datetime(2020, 1, 1, 12, 34),
-                  datetime.datetime(2020, 1, 2, 11, 56),
-                  datetime.datetime(2020, 1, 2, 11, 56),
+    time_stamps = [datetime.datetime(2020, 1, 1, 12, 23),
+                   datetime.datetime(2020, 1, 1, 12, 34),
+                   datetime.datetime(2020, 1, 1, 12, 34),
+                   datetime.datetime(2020, 1, 2, 11, 56),
+                   datetime.datetime(2020, 1, 2, 11, 56),
 
-                  datetime.datetime(2020, 2, 5, 12, 9),
-                  datetime.datetime(2020, 2, 6, 13, 9),
-                  datetime.datetime(2020, 2, 6, 13, 19),
-                  datetime.datetime(2020, 2, 6, 13, 29),
+                   datetime.datetime(2020, 2, 5, 12, 9),
+                   datetime.datetime(2020, 2, 6, 13, 9),
+                   datetime.datetime(2020, 2, 6, 13, 19),
+                   datetime.datetime(2020, 2, 6, 13, 29),
 
-                  datetime.datetime(2020, 3, 6, 11, 29),
-                  datetime.datetime(2020, 3, 6, 12, 1),
-                  datetime.datetime(2020, 3, 6, 12, 2),
-                  datetime.datetime(2020, 3, 6, 12, 12),
-                  datetime.datetime(2020, 3, 6, 12, 22),
+                   datetime.datetime(2020, 3, 6, 11, 29),
+                   datetime.datetime(2020, 3, 6, 12, 1),
+                   datetime.datetime(2020, 3, 6, 12, 2),
+                   datetime.datetime(2020, 3, 6, 12, 12),
+                   datetime.datetime(2020, 3, 6, 12, 22),
 
-                  datetime.datetime(2020, 4, 1, 12, 43),
-                  datetime.datetime(2020, 4, 1, 12, 44),
-                  datetime.datetime(2020, 4, 2, 11, 45),
-                  datetime.datetime(2020, 4, 2, 11, 47),
-                  datetime.datetime(2020, 4, 3, 13, 47),
-                  datetime.datetime(2020, 4, 3, 13, 47),
-                  datetime.datetime(2020, 4, 3, 13, 48),
+                   datetime.datetime(2020, 4, 1, 12, 43),
+                   datetime.datetime(2020, 4, 1, 12, 44),
+                   datetime.datetime(2020, 4, 2, 11, 45),
+                   datetime.datetime(2020, 4, 2, 11, 47),
+                   datetime.datetime(2020, 4, 3, 13, 47),
+                   datetime.datetime(2020, 4, 3, 13, 47),
+                   datetime.datetime(2020, 4, 3, 13, 48),
 
-                  datetime.datetime(2020, 5, 8, 10, 48),
-                  datetime.datetime(2020, 5, 8, 10, 48),
-                  datetime.datetime(2020, 5, 8, 10, 48),
-                  datetime.datetime(2020, 5, 8, 10, 48),
-                  datetime.datetime(2020, 5, 8, 10, 48),
+                   datetime.datetime(2020, 5, 8, 10, 48),
+                   datetime.datetime(2020, 5, 8, 10, 48),
+                   datetime.datetime(2020, 5, 8, 10, 48),
+                   datetime.datetime(2020, 5, 8, 10, 48),
+                   datetime.datetime(2020, 5, 8, 10, 48),
 
-                  datetime.datetime(2020, 6, 4, 12, 33),
-                  datetime.datetime(2020, 6, 4, 12, 34),
-                  datetime.datetime(2020, 6, 4, 12, 35),
-                  datetime.datetime(2020, 6, 4, 12, 36),
-                  datetime.datetime(2020, 6, 4, 12, 37),
-                  datetime.datetime(2020, 6, 4, 12, 38),
-                  ]
+                   datetime.datetime(2020, 6, 4, 12, 33),
+                   datetime.datetime(2020, 6, 4, 12, 34),
+                   datetime.datetime(2020, 6, 4, 12, 35),
+                   datetime.datetime(2020, 6, 4, 12, 36),
+                   datetime.datetime(2020, 6, 4, 12, 37),
+                   datetime.datetime(2020, 6, 4, 12, 38),
+
+                   datetime.datetime(2020, 7, 2, 10, 23),
+                   datetime.datetime(2020, 7, 2, 10, 24),
+                   datetime.datetime(2020, 7, 2, 10, 25),
+                   datetime.datetime(2020, 7, 2, 11, 26),
+                   datetime.datetime(2020, 7, 2, 11, 27),
+                   datetime.datetime(2020, 7, 2, 11, 28),
+                   ]
 
     tss = TimeStampSetV2()
-    for time_stamp in timestamps:
+    for time_stamp in time_stamps:
         tss.add(time_stamp)
 
-    test_timestamps = [datetime.datetime(2020, 5, 1, 11, 48),
-                       datetime.datetime(2020, 5, 2, 11, 48),
-                       datetime.datetime(2020, 5, 3, 11, 48),
-                       datetime.datetime(2020, 5, 4, 11, 48),
-                       datetime.datetime(2020, 5, 5, 11, 48),
-                       datetime.datetime(2020, 5, 6, 11, 48),
-                       datetime.datetime(2020, 5, 7, 11, 48),
-                       datetime.datetime(2020, 5, 8, 11, 48),
-                       datetime.datetime(2020, 5, 9, 11, 48),
-                       datetime.datetime(2020, 5, 10, 11, 48),
-                       datetime.datetime(2020, 5, 11, 11, 48),
-                       datetime.datetime(2020, 5, 12, 11, 48),
-                       datetime.datetime(2020, 5, 13, 11, 48),
-                       datetime.datetime(2020, 5, 14, 11, 48),
-                       datetime.datetime(2020, 5, 15, 11, 48),
-                       datetime.datetime(2020, 5, 16, 11, 48),
-                       datetime.datetime(2020, 5, 17, 11, 48),
-                       datetime.datetime(2020, 5, 18, 11, 48),
-                       datetime.datetime(2020, 5, 19, 11, 48),
-                       datetime.datetime(2020, 5, 20, 11, 48),
-                       datetime.datetime(2020, 5, 21, 11, 48),
-                       datetime.datetime(2020, 5, 22, 11, 48),
-                       datetime.datetime(2020, 5, 23, 11, 48),
-                       datetime.datetime(2020, 5, 24, 11, 48),
-                       datetime.datetime(2020, 5, 25, 11, 48),
-                       datetime.datetime(2020, 5, 26, 11, 48),
-                       datetime.datetime(2020, 5, 27, 11, 48),
-                       datetime.datetime(2020, 5, 28, 11, 48),
-                       datetime.datetime(2020, 5, 29, 11, 48),
-                       datetime.datetime(2020, 5, 30, 11, 48),
-                       ]
-    for time_stamp in test_timestamps:
+    test_time_stamps = [datetime.datetime(2020, 5, 1, 11, 48),
+                        datetime.datetime(2020, 5, 2, 11, 48),
+                        datetime.datetime(2020, 5, 3, 11, 48),
+                        datetime.datetime(2020, 5, 4, 11, 48),
+                        datetime.datetime(2020, 5, 5, 11, 48),
+                        datetime.datetime(2020, 5, 6, 11, 48),
+                        datetime.datetime(2020, 5, 7, 11, 48),
+                        datetime.datetime(2020, 5, 8, 11, 48),
+                        datetime.datetime(2020, 5, 9, 11, 48),
+                        datetime.datetime(2020, 5, 10, 11, 48),
+                        datetime.datetime(2020, 5, 11, 11, 48),
+                        datetime.datetime(2020, 5, 12, 11, 48),
+                        datetime.datetime(2020, 5, 13, 11, 48),
+                        datetime.datetime(2020, 5, 14, 11, 48),
+                        datetime.datetime(2020, 5, 15, 11, 48),
+                        datetime.datetime(2020, 5, 16, 11, 48),
+                        datetime.datetime(2020, 5, 17, 11, 48),
+                        datetime.datetime(2020, 5, 18, 11, 48),
+                        datetime.datetime(2020, 5, 19, 11, 48),
+                        datetime.datetime(2020, 5, 20, 11, 48),
+                        datetime.datetime(2020, 5, 21, 11, 48),
+                        datetime.datetime(2020, 5, 22, 11, 48),
+                        datetime.datetime(2020, 5, 23, 11, 48),
+                        datetime.datetime(2020, 5, 24, 11, 48),
+                        datetime.datetime(2020, 5, 25, 11, 48),
+                        datetime.datetime(2020, 5, 26, 11, 48),
+                        datetime.datetime(2020, 5, 27, 11, 48),
+                        datetime.datetime(2020, 5, 28, 11, 48),
+                        datetime.datetime(2020, 5, 29, 11, 48),
+                        datetime.datetime(2020, 5, 30, 11, 48),
+                        ]
+    for time_stamp in test_time_stamps:
         print(time_stamp, tss.likelihood(time_stamp)[0])
 
-    tss.plot_patterns()
+    tss.plot()
