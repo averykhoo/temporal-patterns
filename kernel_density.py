@@ -21,7 +21,7 @@ def plot_kde(xs, min_val, max_val, kernel='gaussian', bandwidth=None, n_samples=
 
     # fit kde kernel
     kde = KernelDensity(kernel=kernel, bandwidth=bandwidth)
-    kde.fit(xs)
+    kde.fit(xs)  # todo: what happens if this is empty
 
     # plot kde
     kde_xs = np.linspace(min_val, max_val, n_samples).reshape(-1, 1)  # x-values to sample
