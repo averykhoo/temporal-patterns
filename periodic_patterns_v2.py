@@ -15,6 +15,11 @@ import matplotlib.pyplot as plt
 
 from kernel_density import plot_kde_modulo
 
+
+def dot_product(vec_1, vec_2):
+    return sum(x * y for x, y in zip(vec_1, vec_2))
+
+
 days_of_week = [
     'Monday',
     'Tuesday',
@@ -58,11 +63,13 @@ month_lengths = [
 
 @dataclass(eq=False)
 class ModuloPattern:
-    name: Optional[str] = None
+    name: str
     x_axis_labels: Optional[List[str]] = None
     x_axis_name: Optional[str] = None
     vector_dimension: int = 128
     modulo: Union[int, float] = 1
+    min_periods: int = 3
+    min_items: int = 12
 
     # min, max, fractional parts
     min: float = field(default=math.inf, init=False, repr=False)
@@ -79,11 +86,10 @@ class ModuloPattern:
 
     def __post_init__(self):
         # check name
-        if self.name is not None:
-            if not isinstance(self.name, str):
-                raise TypeError(self.name)
-            elif not self.name:
-                self.name = None
+        if not isinstance(self.name, str):
+            raise TypeError(self.name)
+        elif len(self.name) == 0:
+            raise ValueError(self.name)
 
         # check x_axis_name
         if self.x_axis_name is not None:
@@ -134,7 +140,11 @@ class ModuloPattern:
 
     @property
     def n_periods(self):
-        return max(0, (self.max - self.min) / self.modulo)
+        return max(0.0, (self.max - self.min) / self.modulo)
+
+    @property
+    def is_valid(self):
+        return self.n_periods >= self.min_periods and len(self.remainders) >= self.min_items
 
     def consecutive(self, min_length=2):
         out = []
@@ -295,43 +305,50 @@ class TimeStampSetV2:
         self.n_week: Dict[Tuple[int, str], Set[int]] = dict()
 
         # patterns
-        self.day = ModuloPattern(name='',  # 'day',
+        self.day = ModuloPattern(name='day',
                                  x_axis_labels=['1am', '2am', '3am', '4am', '5am', '6am',
                                                 '7am', '8am', '9am', '10am', '11am', '12nn',
                                                 '1pm', '2pm', '3pm', '4pm', '5pm', '6pm',
                                                 '7pm', '8pm', '9pm', '10pm', '11pm', '12mn'],
-                                 x_axis_name='')  # 'hour')
-        self.week = ModuloPattern(name='',  # 'week',
+                                 x_axis_name='hour')
+        self.week = ModuloPattern(name='week',
                                   x_axis_labels=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                                  x_axis_name='')  # 'day')
-        self.two_week = ModuloPattern(name='',  # 'fortnight',
+                                  x_axis_name='day')
+        self.two_week = ModuloPattern(name='fortnight',
                                       x_axis_labels=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] * 2,
-                                      x_axis_name='')  # 'day')
-        self.month = ModuloPattern(name='',  # 'month',
+                                      x_axis_name='day',
+                                      min_periods=12)  # about 6 months
+        self.month = ModuloPattern(name='month',
                                    x_axis_labels=['early', 'mid', 'late'],
-                                   x_axis_name='')  # '10-day period')
-        self.two_month = ModuloPattern(name='',  # '2-month',
+                                   x_axis_name='10-day period')
+        self.two_month = ModuloPattern(name='2-month',
                                        x_axis_labels=['Odd', 'Even'],
-                                       x_axis_name='')  # 'month')
-        self.three_month = ModuloPattern(name='',  # 'quarter',
+                                       x_axis_name='month',
+                                       min_periods=6)  # 1 year
+        self.three_month = ModuloPattern(name='quarter',
                                          x_axis_labels=['Jan/May/Sep', 'Feb/Jun/Oct', 'Mar/Jul/Nov', 'Apr/Aug/Dec'],
-                                         x_axis_name='')  # 'month')
-        self.six_month = ModuloPattern(name='',  # '6-month',
+                                         x_axis_name='month',
+                                         min_periods=4)  # 1 year
+        self.six_month = ModuloPattern(name='6-month',
                                        x_axis_labels=['Jan/Jul', 'Feb/Aug', 'Mar/Sep',
                                                       'Apr/Oct', 'May/Nov', 'Jun/Dec'],
-                                       x_axis_name='')  # 'month')
-        self.year = ModuloPattern(name='',  # 'year',
+                                       x_axis_name='month',
+                                       min_periods=4,  # 2 years
+                                       min_items=4 * 6)
+        self.year = ModuloPattern(name='year',
                                   x_axis_labels=['Jan', 'Feb', 'Mar',
                                                  'Apr', 'May', 'Jun',
                                                  'Jul', 'Aug', 'Sep',
                                                  'Oct', 'Nov', 'Dec'],
-                                  x_axis_name='')  # 'month')
-        self.two_year = ModuloPattern(name='',  # '2-year',
+                                  x_axis_name='month',
+                                  min_items=3 * 12)  # across 3 years
+        self.two_year = ModuloPattern(name='2-year',
                                       x_axis_labels=['Jan', 'Feb', 'Mar',
                                                      'Apr', 'May', 'Jun',
                                                      'Jul', 'Aug', 'Sep',
                                                      'Oct', 'Nov', 'Dec'] * 2,
-                                      x_axis_name='')  # 'month')
+                                      x_axis_name='month',
+                                      min_items=6 * 12)  # across 6 years
 
     @property
     def _patterns(self):
@@ -340,33 +357,38 @@ class TimeStampSetV2:
                      self.month, self.two_month, self.three_month, self.six_month,
                      self.year, self.two_year,
                      ]
-        return [_pattern for _pattern in _patterns if _pattern.n_periods >= 3]
+        return [_pattern for _pattern in _patterns if _pattern.is_valid]
 
-    def add(self, timestamp: datetime.datetime):
-        # replace timezone
-        timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
+    def add(self, *timestamps: datetime.datetime):
+        for timestamp in timestamps:
+            # replace timezone
+            timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
 
-        # add to index
-        timestamp_idx = len(self.timestamps)
-        self.timestamps.append(timestamp)
-        assert self.timestamps[timestamp_idx] is timestamp, 'race condition?'
+            # add to index
+            timestamp_idx = len(self.timestamps)
+            self.timestamps.append(timestamp)
+            assert self.timestamps[timestamp_idx] is timestamp, 'race condition?'
 
-        # count
-        hour, n, full_week, day_of_week = timestamp_hour_of_day_of_week_of_month(timestamp)
-        self.hour_day.setdefault((hour, day_of_week), set()).add(timestamp_idx)
-        self.n_day.setdefault((n, day_of_week), set()).add(timestamp_idx)
-        self.n_week.setdefault((full_week, day_of_week), set()).add(timestamp_idx)
+            # count
+            hour, n, full_week, day_of_week = timestamp_hour_of_day_of_week_of_month(timestamp)
+            self.hour_day.setdefault((hour, day_of_week), set()).add(timestamp_idx)
+            self.n_day.setdefault((n, day_of_week), set()).add(timestamp_idx)
+            self.n_week.setdefault((full_week, day_of_week), set()).add(timestamp_idx)
 
-        # modular patterns
-        self.day.add(timestamp_day(timestamp))
-        self.week.add(timestamp_week(timestamp))
-        self.two_week.add(timestamp_two_week(timestamp))
-        self.month.add(timestamp_n_month(timestamp))
-        self.two_month.add(timestamp_n_month(timestamp, n=2))
-        self.three_month.add(timestamp_n_month(timestamp, n=3))
-        self.six_month.add(timestamp_n_month(timestamp, n=6))
-        self.year.add(timestamp_n_year(timestamp))
-        self.two_year.add(timestamp_n_year(timestamp, n=2))
+            # modular patterns
+            self.day.add(timestamp_day(timestamp))
+            self.week.add(timestamp_week(timestamp))
+            self.two_week.add(timestamp_two_week(timestamp))
+            self.month.add(timestamp_n_month(timestamp))
+            self.two_month.add(timestamp_n_month(timestamp, n=2))
+            self.three_month.add(timestamp_n_month(timestamp, n=3))
+            self.six_month.add(timestamp_n_month(timestamp, n=6))
+            self.year.add(timestamp_n_year(timestamp))
+            self.two_year.add(timestamp_n_year(timestamp, n=2))
+
+    @property
+    def vectors(self):
+        return {_pattern.name: _pattern.vector for _pattern in self._patterns if _pattern.is_valid}
 
     def consecutive(self, min_length=2):
         return {_pattern.name: _pattern.consecutive(min_length=min_length) for _pattern in self._patterns}
@@ -377,10 +399,11 @@ class TimeStampSetV2:
     def fractions(self):
         return {_pattern.name: sorted(_pattern.remainders) for _pattern in self._patterns}
 
-    def plot(self):
-        plt.cla()
-        plt.clf()
-        plt.close()
+    def plot(self, show=True, clear=True):
+        if clear:
+            plt.cla()
+            plt.clf()
+            plt.close()
 
         fig, axes = plt.subplots(nrows=len(self._patterns))
         for _pattern, axis in zip(self._patterns, axes.flatten() if len(self._patterns) > 1 else [axes]):
@@ -389,11 +412,13 @@ class TimeStampSetV2:
         fig.tight_layout()
         # plt.legend()
 
-        plt.show()
+        if show:
+            plt.show()
 
-        plt.clf()
-        plt.cla()
-        plt.close()
+        if clear:
+            plt.cla()
+            plt.clf()
+            plt.close()
 
     def likelihood(self, *timestamps: datetime.datetime):
         timestamps = sorted(timestamps)
@@ -419,6 +444,20 @@ class TimeStampSetV2:
         # return timestamps_likelihoods
         return list(map(lambda xs: (sum(x ** 0.1 for x in xs) / len(xs)) ** 10, timestamps_likelihoods))
 
+    def similarity(self, other: 'TimeStampSetV2'):
+        similarities = []
+        other_vectors = other.vectors
+        for name, vector in self.vectors.items():
+            if name in other_vectors:
+                similarities.append(dot_product(vector, other_vectors[name]))
+
+        # no similar vectors
+        if len(similarities) == 0:
+            return 0, 0
+
+        # L(0.1) mean of all similarities
+        return (sum(x ** 0.1 for x in similarities) / len(similarities)) ** 10, len(similarities)
+
 
 if __name__ == '__main__':
     time_stamps = [datetime.datetime(2020, 1, 1, 12, 23),
@@ -431,6 +470,8 @@ if __name__ == '__main__':
                    datetime.datetime(2020, 2, 6, 13, 9),
                    datetime.datetime(2020, 2, 6, 13, 19),
                    datetime.datetime(2020, 2, 6, 13, 29),
+                   datetime.datetime(2020, 2, 6, 13, 30),
+                   datetime.datetime(2020, 2, 6, 13, 31),
 
                    datetime.datetime(2020, 3, 6, 11, 29),
                    datetime.datetime(2020, 3, 6, 12, 1),
@@ -465,44 +506,83 @@ if __name__ == '__main__':
                    datetime.datetime(2020, 7, 2, 11, 26),
                    datetime.datetime(2020, 7, 2, 11, 27),
                    datetime.datetime(2020, 7, 2, 11, 28),
+
+                   datetime.datetime(2020, 8, 5, 13, 3),
+                   datetime.datetime(2020, 8, 5, 13, 4),
+                   datetime.datetime(2020, 8, 5, 13, 5),
+                   datetime.datetime(2020, 8, 6, 13, 6),
+                   datetime.datetime(2020, 8, 6, 13, 7),
+                   datetime.datetime(2020, 8, 6, 13, 8),
+                   datetime.datetime(2020, 8, 9, 13, 8),
                    ]
 
     tss = TimeStampSetV2()
-    for time_stamp in time_stamps:
-        tss.add(time_stamp)
+    tss.add(*time_stamps)
 
-    test_time_stamps = [datetime.datetime(2020, 5, 1, 11, 48),
-                        datetime.datetime(2020, 5, 2, 11, 48),
-                        datetime.datetime(2020, 5, 3, 11, 48),
-                        datetime.datetime(2020, 5, 4, 11, 48),
-                        datetime.datetime(2020, 5, 5, 11, 48),
-                        datetime.datetime(2020, 5, 6, 11, 48),
-                        datetime.datetime(2020, 5, 7, 11, 48),
-                        datetime.datetime(2020, 5, 8, 11, 48),
-                        datetime.datetime(2020, 5, 9, 11, 48),
-                        datetime.datetime(2020, 5, 10, 11, 48),
-                        datetime.datetime(2020, 5, 11, 11, 48),
-                        datetime.datetime(2020, 5, 12, 11, 48),
-                        datetime.datetime(2020, 5, 13, 11, 48),
-                        datetime.datetime(2020, 5, 14, 11, 48),
-                        datetime.datetime(2020, 5, 15, 11, 48),
-                        datetime.datetime(2020, 5, 16, 11, 48),
-                        datetime.datetime(2020, 5, 17, 11, 48),
-                        datetime.datetime(2020, 5, 18, 11, 48),
+    test_time_stamps = [datetime.datetime(2020, 5, 1, 11, 30),
+                        datetime.datetime(2020, 5, 2, 11, 31),
+                        datetime.datetime(2020, 5, 3, 11, 32),
+                        datetime.datetime(2020, 5, 4, 11, 33),
+                        datetime.datetime(2020, 5, 5, 11, 34),
+                        datetime.datetime(2020, 5, 6, 11, 35),
+                        datetime.datetime(2020, 5, 7, 11, 36),
+                        datetime.datetime(2020, 5, 8, 11, 37),
+                        datetime.datetime(2020, 5, 9, 11, 38),
+                        datetime.datetime(2020, 5, 10, 11, 39),
+                        datetime.datetime(2020, 5, 11, 11, 40),
+                        datetime.datetime(2020, 5, 12, 11, 41),
+                        datetime.datetime(2020, 5, 13, 11, 42),
+                        datetime.datetime(2020, 5, 14, 11, 43),
+                        datetime.datetime(2020, 5, 15, 11, 44),
+                        datetime.datetime(2020, 5, 16, 11, 45),
+                        datetime.datetime(2020, 5, 17, 11, 46),
+                        datetime.datetime(2020, 5, 18, 11, 47),
                         datetime.datetime(2020, 5, 19, 11, 48),
-                        datetime.datetime(2020, 5, 20, 11, 48),
-                        datetime.datetime(2020, 5, 21, 11, 48),
-                        datetime.datetime(2020, 5, 22, 11, 48),
-                        datetime.datetime(2020, 5, 23, 11, 48),
-                        datetime.datetime(2020, 5, 24, 11, 48),
-                        datetime.datetime(2020, 5, 25, 11, 48),
-                        datetime.datetime(2020, 5, 26, 11, 48),
-                        datetime.datetime(2020, 5, 27, 11, 48),
-                        datetime.datetime(2020, 5, 28, 11, 48),
-                        datetime.datetime(2020, 5, 29, 11, 48),
-                        datetime.datetime(2020, 5, 30, 11, 48),
+                        datetime.datetime(2020, 5, 20, 11, 49),
+                        datetime.datetime(2020, 5, 21, 11, 50),
+                        datetime.datetime(2020, 5, 22, 11, 51),
+                        datetime.datetime(2020, 5, 23, 11, 52),
+                        datetime.datetime(2020, 5, 24, 11, 53),
+                        datetime.datetime(2020, 5, 25, 11, 54),
+                        datetime.datetime(2020, 5, 26, 11, 55),
+                        datetime.datetime(2020, 5, 27, 11, 56),
+                        datetime.datetime(2020, 5, 28, 11, 57),
+                        datetime.datetime(2020, 5, 29, 11, 58),
+                        datetime.datetime(2020, 5, 30, 11, 59),
                         ]
     for time_stamp in test_time_stamps:
         print(time_stamp, tss.likelihood(time_stamp)[0])
 
-    tss.plot()
+    # tss.plot()
+
+    tss1 = TimeStampSetV2()
+    tss2 = TimeStampSetV2()
+    tss1.add(*test_time_stamps[::2])
+    tss2.add(*test_time_stamps[1::2])
+    print('\n')
+    print(tss1.similarity(tss2))
+
+    tss1 = TimeStampSetV2()
+    tss2 = TimeStampSetV2()
+    tss1.add(*time_stamps[::2])
+    tss2.add(*time_stamps[1::2])
+    print('\n')
+    print(tss1.similarity(tss2))
+
+    tss1 = TimeStampSetV2()
+    tss1.add(*test_time_stamps[:len(test_time_stamps) // 2])
+
+    print(tss1.similarity(tss2))
+    tss2 = TimeStampSetV2()
+    tss2.add(*test_time_stamps[len(test_time_stamps) // 2:])
+    print('\n')
+    print(tss1.similarity(tss2))
+
+    tss1 = TimeStampSetV2()
+    tss1.add(*time_stamps[:len(time_stamps) // 2])
+
+    print(tss1.similarity(tss2))
+    tss2 = TimeStampSetV2()
+    tss2.add(*time_stamps[len(time_stamps) // 2:])
+    print('\n')
+    print(tss1.similarity(tss2))
