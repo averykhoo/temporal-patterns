@@ -2,6 +2,7 @@ import bisect
 import datetime
 from dataclasses import dataclass
 from dataclasses import field
+from functools import lru_cache
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -64,11 +65,29 @@ class ModuloPattern:
     all_remainders: List[float] = field(default_factory=list, init=False)  # in the interval [0, 1)
     quotients: Dict[float, List] = field(default_factory=dict, init=False)
     remainders: Dict[float, List] = field(default_factory=dict, init=False)  # in the interval [0, 1)
-    __kde: Dict[int, Tuple[List[float], List[float]]] = field(default_factory=dict, init=False, repr=False)
-    __vector: Optional[List[float]] = field(default=None, init=False, repr=False)
+    __kde: Dict[int, Tuple[Tuple[float], Tuple[float]]] = field(default_factory=dict, init=False, repr=False)
+    __vector: Tuple[float] = field(default_factory=list, init=False, repr=False)
+
+    def __post_init__(self):
+        if self.modulo == 0:
+            raise ValueError('modulo must not be zero')
+        if not (isinstance(self.vector_dimension, int) and self.vector_dimension > 0):
+            raise TypeError(f'vector dimension must be a positive integer, got {self.vector_dimension}')
+
+    @property
+    def vector(self) -> Tuple[float]:
+        if len(self.__vector) != self.vector_dimension:
+            kde_xs, kde_ys = self.kde(self.vector_dimension)
+            vector_length = sum(elem ** 2 for elem in kde_ys) ** 0.5
+            self.__vector = tuple(elem / vector_length for elem in kde_ys)
+        return self.__vector
 
     def add(self, value, item=None):
+        # reset kde and vector
         self.__kde = dict()
+        self.__vector = tuple()
+
+        # add item
         quotient, remainder = divmod(value, self.modulo)
         self.all_remainders.append(remainder)
         self.quotients.setdefault(quotient, []).append(item)
@@ -90,7 +109,8 @@ class ModuloPattern:
 
     def kde(self, dim=1000):
         if dim not in self.__kde:
-            self.__kde[dim] = plot_kde_modulo(self.all_remainders, modulo=1, n_samples=dim)
+            kde_xs, kde_ys = plot_kde_modulo(self.all_remainders, modulo=1, n_samples=dim)
+            self.__kde[dim] = (tuple(kde_xs), tuple(kde_ys))
         return self.__kde[dim]
 
     def plot_patterns(self, axis: Optional[plt.Axes] = None, color: str = 'cyan'):
@@ -120,11 +140,10 @@ class ModuloPattern:
                     density=False,
                     range=(0, len(self.x_axis_labels)),
                     color=color,
-                    alpha=0.8,
-                    label='histogram')
+                    alpha=0.8)
 
         # plot and fill area
-        ax.plot(kde_xs, kde_ys, color=color, linewidth=1, label='kde')
+        ax.plot(kde_xs, kde_ys, color=color, linewidth=1)
         ax.fill_between(kde_xs, kde_ys, color=color, alpha=0.2)
 
         # labels and formatting
@@ -154,7 +173,78 @@ class ModuloPattern:
         return self.kde()[1][idx]
 
 
-class TimeStampSet:
+def timestamp_day_of_week_of_month(timestamp: datetime.datetime):
+    # nth 7-day-period of month (starts at 1)
+    n = ((timestamp.day + 1) // 7) + 1
+
+    # n-th full week of month (starts at 1, can be 0)
+    full_week = (timestamp.day + 6 - timestamp.weekday()) // 7
+
+    # day of week (starts at Monday)
+    day_of_week = days_of_week[timestamp.weekday()]
+
+    return n, full_week, day_of_week
+
+
+@lru_cache(maxsize=65536)
+def timestamp_day(timestamp: datetime.datetime) -> float:
+    _start = timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_fraction = (timestamp - _start).total_seconds() / 86400  # 0 to less than 1
+    day_since_epoch = datetime.timedelta(seconds=timestamp.timestamp()).days  # 1970-01-02 -> 1
+    return day_since_epoch + day_fraction
+
+
+@lru_cache(maxsize=65536)
+def timestamp_week(timestamp: datetime.datetime) -> float:
+    quotient, remainder = divmod(timestamp_day(timestamp), 1)
+    week_fraction = (timestamp.weekday() + remainder) / 7
+    week_since_epoch = (quotient + 3) // 7  # 1st Monday after epoch (1970-01-05) -> 1
+    return week_since_epoch + week_fraction
+
+
+@lru_cache(maxsize=65536)
+def timestamp_two_week(timestamp: datetime.datetime) -> float:
+    quotient, remainder = divmod(timestamp_day(timestamp), 1)
+    two_week_fraction = ((quotient + 3) % 14 + remainder) / 14
+    two_week_since_epoch = (quotient + 3) // 14
+    return two_week_since_epoch + two_week_fraction
+
+
+@lru_cache(maxsize=65536)
+def _timestamp_month(timestamp: datetime.datetime) -> float:
+    _start = timestamp.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    _end = (_start + datetime.timedelta(days=35)).replace(day=1)
+    month_fraction = (timestamp - _start).total_seconds() / (_end - _start).total_seconds()  # 0 to less than 1
+    month_since_epoch = (timestamp.year - 1970) * 12 + timestamp.month - 1
+    return month_since_epoch + month_fraction
+
+
+@lru_cache(maxsize=65536)
+def timestamp_n_month(timestamp: datetime.datetime, n: int = 1) -> float:
+    quotient, remainder = divmod(_timestamp_month(timestamp), 1)
+    n_month_fraction = (quotient % n + remainder) / n
+    n_month_since_epoch = quotient // n
+    return n_month_since_epoch + n_month_fraction
+
+
+@lru_cache(maxsize=65536)
+def _timestamp_year(timestamp: datetime.datetime) -> float:
+    _start = timestamp.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    _end = _start.replace(year=timestamp.year + 1)
+    year_fraction = (timestamp - _start).total_seconds() / (_end - _start).total_seconds()
+    year_since_epoch = timestamp.year - 1970
+    return year_since_epoch + year_fraction
+
+
+@lru_cache(maxsize=65536)
+def timestamp_n_year(timestamp: datetime.datetime, n: int = 1) -> float:
+    quotient, remainder = divmod(_timestamp_year(timestamp), 1)
+    n_year_fraction = (quotient % n + remainder) / n
+    n_year_since_epoch = quotient // n
+    return n_year_since_epoch + n_year_fraction
+
+
+class TimeStampSetV2:
     def __init__(self, default_session_length=datetime.timedelta(hours=48)):
         self.default_session_length = default_session_length
 
@@ -592,9 +682,9 @@ if __name__ == '__main__':
                   datetime.datetime(2020, 6, 4, 12, 38),
                   ]
 
-    tss = TimeStampSet()
-    for timestamp in timestamps:
-        tss.add(timestamp)
+    tss = TimeStampSetV2()
+    for time_stamp in timestamps:
+        tss.add(time_stamp)
 
     test_timestamps = [datetime.datetime(2020, 5, 1, 11, 48),
                        datetime.datetime(2020, 5, 2, 11, 48),
@@ -627,7 +717,7 @@ if __name__ == '__main__':
                        datetime.datetime(2020, 5, 29, 11, 48),
                        datetime.datetime(2020, 5, 30, 11, 48),
                        ]
-    for timestamp in test_timestamps:
-        print(timestamp, tss.likelihood(timestamp)[0])
+    for time_stamp in test_timestamps:
+        print(time_stamp, tss.likelihood(time_stamp)[0])
 
     tss.plot_patterns()
