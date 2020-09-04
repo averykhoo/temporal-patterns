@@ -68,7 +68,7 @@ class ModuloPattern:
     x_axis_name: Optional[str] = None
     vector_dimension: int = 128
     modulo: Union[int, float] = 1
-    min_periods: int = 3
+    min_periods: int = 4
     min_items: int = 12
 
     # min, max, fractional parts
@@ -310,7 +310,8 @@ class TimeStampSetV2:
                                                 '7am', '8am', '9am', '10am', '11am', '12nn',
                                                 '1pm', '2pm', '3pm', '4pm', '5pm', '6pm',
                                                 '7pm', '8pm', '9pm', '10pm', '11pm', '12mn'],
-                                 x_axis_name='hour')
+                                 x_axis_name='hour',
+                                 min_periods=0)
         self.week = ModuloPattern(name='week',
                                   x_axis_labels=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
                                   x_axis_name='day')
@@ -327,14 +328,12 @@ class TimeStampSetV2:
                                        min_periods=6)  # 1 year
         self.three_month = ModuloPattern(name='quarter',
                                          x_axis_labels=['Jan/May/Sep', 'Feb/Jun/Oct', 'Mar/Jul/Nov', 'Apr/Aug/Dec'],
-                                         x_axis_name='month',
-                                         min_periods=4)  # 1 year
+                                         x_axis_name='month')
         self.six_month = ModuloPattern(name='6-month',
                                        x_axis_labels=['Jan/Jul', 'Feb/Aug', 'Mar/Sep',
                                                       'Apr/Oct', 'May/Nov', 'Jun/Dec'],
                                        x_axis_name='month',
-                                       min_periods=4,  # 2 years
-                                       min_items=4 * 6)
+                                       min_items=24)
         self.year = ModuloPattern(name='year',
                                   x_axis_labels=['Jan', 'Feb', 'Mar',
                                                  'Apr', 'May', 'Jun',
@@ -519,41 +518,41 @@ if __name__ == '__main__':
     tss = TimeStampSetV2()
     tss.add(*time_stamps)
 
-    test_time_stamps = [datetime.datetime(2020, 5, 1, 11, 30),
-                        datetime.datetime(2020, 5, 2, 11, 31),
-                        datetime.datetime(2020, 5, 3, 11, 32),
-                        datetime.datetime(2020, 5, 4, 11, 33),
-                        datetime.datetime(2020, 5, 5, 11, 34),
-                        datetime.datetime(2020, 5, 6, 11, 35),
-                        datetime.datetime(2020, 5, 7, 11, 36),
-                        datetime.datetime(2020, 5, 8, 11, 37),
-                        datetime.datetime(2020, 5, 9, 11, 38),
-                        datetime.datetime(2020, 5, 10, 11, 39),
+    test_time_stamps = [datetime.datetime(2020, 5,  1,  9, 30),
+                        datetime.datetime(2020, 5,  2,  9, 31),
+                        datetime.datetime(2020, 5,  3,  9, 32),
+                        datetime.datetime(2020, 5,  4,  9, 33),
+                        datetime.datetime(2020, 5,  5,  9, 34),
+                        datetime.datetime(2020, 5,  6, 10, 35),
+                        datetime.datetime(2020, 5,  7, 10, 36),
+                        datetime.datetime(2020, 5,  8, 10, 37),
+                        datetime.datetime(2020, 5,  9, 10, 38),
+                        datetime.datetime(2020, 5, 10, 10, 39),
                         datetime.datetime(2020, 5, 11, 11, 40),
                         datetime.datetime(2020, 5, 12, 11, 41),
                         datetime.datetime(2020, 5, 13, 11, 42),
                         datetime.datetime(2020, 5, 14, 11, 43),
                         datetime.datetime(2020, 5, 15, 11, 44),
-                        datetime.datetime(2020, 5, 16, 11, 45),
-                        datetime.datetime(2020, 5, 17, 11, 46),
-                        datetime.datetime(2020, 5, 18, 11, 47),
-                        datetime.datetime(2020, 5, 19, 11, 48),
-                        datetime.datetime(2020, 5, 20, 11, 49),
-                        datetime.datetime(2020, 5, 21, 11, 50),
-                        datetime.datetime(2020, 5, 22, 11, 51),
-                        datetime.datetime(2020, 5, 23, 11, 52),
-                        datetime.datetime(2020, 5, 24, 11, 53),
-                        datetime.datetime(2020, 5, 25, 11, 54),
-                        datetime.datetime(2020, 5, 26, 11, 55),
-                        datetime.datetime(2020, 5, 27, 11, 56),
-                        datetime.datetime(2020, 5, 28, 11, 57),
-                        datetime.datetime(2020, 5, 29, 11, 58),
-                        datetime.datetime(2020, 5, 30, 11, 59),
+                        datetime.datetime(2020, 5, 16, 12, 45),
+                        datetime.datetime(2020, 5, 17, 12, 46),
+                        datetime.datetime(2020, 5, 18, 12, 47),
+                        datetime.datetime(2020, 5, 19, 12, 48),
+                        datetime.datetime(2020, 5, 20, 12, 49),
+                        datetime.datetime(2020, 5, 21, 13, 50),
+                        datetime.datetime(2020, 5, 22, 13, 51),
+                        datetime.datetime(2020, 5, 23, 13, 52),
+                        datetime.datetime(2020, 5, 24, 13, 53),
+                        datetime.datetime(2020, 5, 25, 13, 54),
+                        datetime.datetime(2020, 5, 26, 14, 55),
+                        datetime.datetime(2020, 5, 27, 14, 56),
+                        datetime.datetime(2020, 5, 28, 14, 57),
+                        datetime.datetime(2020, 5, 29, 14, 58),
+                        datetime.datetime(2020, 5, 30, 14, 59),
                         ]
     for time_stamp in test_time_stamps:
         print(time_stamp, tss.likelihood(time_stamp)[0])
 
-    # tss.plot()
+    tss.plot()
 
     tss1 = TimeStampSetV2()
     tss2 = TimeStampSetV2()
@@ -571,8 +570,6 @@ if __name__ == '__main__':
 
     tss1 = TimeStampSetV2()
     tss1.add(*test_time_stamps[:len(test_time_stamps) // 2])
-
-    print(tss1.similarity(tss2))
     tss2 = TimeStampSetV2()
     tss2.add(*test_time_stamps[len(test_time_stamps) // 2:])
     print('\n')
@@ -580,9 +577,14 @@ if __name__ == '__main__':
 
     tss1 = TimeStampSetV2()
     tss1.add(*time_stamps[:len(time_stamps) // 2])
-
-    print(tss1.similarity(tss2))
     tss2 = TimeStampSetV2()
     tss2.add(*time_stamps[len(time_stamps) // 2:])
+    print('\n')
+    print(tss1.similarity(tss2))
+
+    tss1 = TimeStampSetV2()
+    tss1.add(*time_stamps)
+    tss2 = TimeStampSetV2()
+    tss2.add(*test_time_stamps)
     print('\n')
     print(tss1.similarity(tss2))
