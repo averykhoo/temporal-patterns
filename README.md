@@ -13,7 +13,9 @@
         
 
 ##  todo
-*   how to find approximate patterns?
+*   support removal
+*   try auto-correlation?
+    *   first normalize months
 *   the "fraction" stuff is basically a slow fourier transform
     *   non-linear because of months
     *   can it be generalized?
@@ -33,7 +35,10 @@
 *   visualizations better than numbers
     *   full week???
     *   24h polar plot for days
-    *   day/hour heatmap for weeks, month/week heatmap for years
+    *   table heatmap plot
+        *   day/hour heatmap for weeks
+        *   month/week heatmap for years
+        *   day-fullweek of month
         *   https://infovis-mannheim.de/viavelox/
         *   https://infovis-mannheim.de/viavelox/assets/img/matrix.jpg
         *   https://infovis-mannheim.de/viavelox/assets/img/patterns1.jpg
@@ -58,4 +63,7 @@
     *   need to remove the event before seeing how anomalous it is
     *   how to handle zero probability?
     *   how to collate over multiple patterns?
+*   likelihoods
+    *   scale by number of matches? n-th root?
+    *   sorting?
     
