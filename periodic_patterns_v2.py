@@ -4,6 +4,7 @@ import math
 from dataclasses import dataclass
 from dataclasses import field
 from functools import lru_cache
+from pprint import pprint
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -11,7 +12,9 @@ from typing import Set
 from typing import Tuple
 from typing import Union
 
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
 
 from kernel_density import plot_kde_modulo
 
@@ -68,6 +71,8 @@ class ModuloPattern:
     x_axis_name: Optional[str] = None
     vector_dimension: int = 128
     modulo: Union[int, float] = 1
+
+    # check if there's enough data for the pattern to be valid
     min_periods: int = 4
     min_items: int = 12
 
@@ -75,10 +80,7 @@ class ModuloPattern:
     min: float = field(default=math.inf, init=False, repr=False)
     max: float = field(default=-math.inf, init=False, repr=False)
     remainders: List[float] = field(default_factory=list, init=False, repr=False)  # in the interval [0, 1)
-
-    # are these even needed
-    _remainders: Dict[float, List] = field(default_factory=dict, init=False)  # in the interval [0, 1)
-    _quotients: Dict[float, List] = field(default_factory=dict, init=False)
+    _raw: Dict[float, List] = field(default_factory=dict, init=False)
 
     # cached values
     __kde: Dict[int, Tuple[Tuple[float], Tuple[float]]] = field(default_factory=dict, init=False, repr=False)
@@ -119,10 +121,9 @@ class ModuloPattern:
         self.max = max(value, self.max)
 
         # add item
+        self._raw.setdefault(value, []).append(item)
         quotient, remainder = divmod(value, self.modulo)
         self.remainders.append(remainder)
-        self._quotients.setdefault(quotient, []).append(item)
-        self._remainders.setdefault(remainder, []).append(item)
 
     def kde(self, dim=1000):
         if dim not in self.__kde:
@@ -149,7 +150,8 @@ class ModuloPattern:
     def consecutive(self, min_length=2):
         out = []
         buffer = []
-        for quotient in sorted(self._quotients.keys()):
+        for value in sorted(self._raw.keys()):
+            quotient = value // self.modulo
             if not buffer:
                 buffer.append(quotient)
             elif quotient - 1 == buffer[-1]:
@@ -389,6 +391,37 @@ class TimeStampSetV2:
     def vectors(self):
         return {_pattern.name: _pattern.vector for _pattern in self._patterns if _pattern.is_valid}
 
+    def sessions(self, distance=datetime.timedelta(days=1.5)):
+        self.timestamps = sorted(self.timestamps)
+        out = []
+        buffer = []
+        prev_timestamp = self.timestamps[0]
+        for timestamp in self.timestamps:
+            if timestamp - prev_timestamp <= distance:
+                buffer.append(timestamp)
+            else:
+                assert len(buffer) > 0
+                out.append(buffer)
+                buffer = [timestamp]
+            prev_timestamp = timestamp
+        if buffer:
+            out.append(buffer)
+        return out
+
+    def session_likelihoods(self, distance=datetime.timedelta(days=1.5)):
+        sessions = self.sessions(distance=distance)
+        likelihoods = []
+        for session_idx in range(len(sessions)):
+            _tss = TimeStampSetV2()
+            _tss.add(*[ts for session in sessions[:session_idx] + sessions[session_idx + 1:] for ts in session])
+            likelihoods.append(_tss.likelihood(*sessions[session_idx]))
+
+        out = []
+        for session, likelihood in zip(sessions, likelihoods):
+            out.append(((sum(x ** 0.1 for x in likelihood) / len(likelihood)) ** 10, session, likelihood))
+
+        return sorted(out)
+
     def consecutive(self, min_length=2):
         return {_pattern.name: _pattern.consecutive(min_length=min_length) for _pattern in self._patterns}
 
@@ -457,6 +490,186 @@ class TimeStampSetV2:
         # L(0.1) mean of all similarities
         return (sum(x ** 0.1 for x in similarities) / len(similarities)) ** 10, len(similarities)
 
+    def forecast(self,
+                 start_date: Optional[datetime.datetime] = None,
+                 end_date: Optional[datetime.datetime] = None,
+                 delta=datetime.timedelta(minutes=5),
+                 ):
+
+        # day after last seen date
+        if start_date is None:
+            start_date = max(self.timestamps)
+            start_date = start_date + datetime.timedelta(days=1)
+            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # add one month
+        if end_date is None:
+            end_date = start_date + datetime.timedelta(days=35)
+            end_date = end_date.replace(day=start_date.day)
+
+        # get list of dates to check
+        timestamps = []
+        while start_date < end_date:
+            timestamps.append(start_date)
+            start_date = start_date + delta
+
+        # get likelihoods
+        likelihoods = self.likelihood(*timestamps)
+        max_likelihood = max(likelihoods)
+
+        # normalize and return
+        return [(timestamp, likelihood / max_likelihood) for timestamp, likelihood in zip(timestamps, likelihoods)]
+
+    def plot_forecast(self,
+                      start_date: Optional[datetime.datetime] = None,
+                      end_date: Optional[datetime.datetime] = None,
+                      delta=datetime.timedelta(minutes=5),
+                      threshold: Optional[float] = None,
+                      show: bool = True,
+                      clear: bool = True,
+                      ):
+        if clear:
+            plt.cla()
+            plt.clf()
+            plt.close()
+
+        # plot
+        fig, ax = plt.subplots()
+        forecast = self.forecast(start_date=start_date, end_date=end_date, delta=delta)
+        if not forecast:
+            return None
+        xs, ys = zip(*forecast)
+        ax.plot(xs, ys, lw=1)
+
+        # adaptive threshold (5%)
+        if threshold is None:
+            threshold = sorted(ys, reverse=True)[len(ys) // 20]
+        ax.axhline(y=threshold, linewidth=0.5, color='green')
+
+        # fill when above threshold
+        xs = []
+        ys = []
+        for x, y in forecast:
+            if y >= threshold:
+                xs.append(x)
+                ys.append(y)
+            elif xs:
+                ax.fill_between(xs, ys, threshold, alpha=0.8, color='green', lw=0)
+                ax.fill_between(xs, threshold, 0, alpha=0.4, color='green', lw=0)
+                xs = []
+                ys = []
+
+        ax.xaxis.set_minor_locator(mdates.DayLocator())
+        ax.xaxis.set_major_locator(mdates.MonthLocator())
+        ax.yaxis.set_minor_locator(MultipleLocator(0.1))
+        ax.yaxis.set_major_locator(MultipleLocator(1))
+
+        # no y tick labels
+        ax.yaxis.set_ticks([])
+
+        ax.xaxis.grid(True, which='minor')
+        ax.grid(True)
+
+        plt.grid(b=True, color='black', linestyle='-')
+        plt.grid(b=True, which='minor', color='grey', linestyle='-', alpha=0.2)
+
+        # center each label
+        for label in ax.get_xticklabels():
+            label.set_horizontalalignment('left')
+
+        # set view limits
+        ax.set_xlim(left=forecast[0][0], right=forecast[-1][0])
+        ax.set_ylim(bottom=0, top=1)
+
+        if show:
+            plt.show()
+
+        if clear:
+            plt.cla()
+            plt.clf()
+            plt.close()
+        else:
+            return plt
+
+    def plot_session_likelihoods(self,
+                                 show: bool = True,
+                                 clear: bool = True,
+                                 ):
+        if not self.timestamps:
+            return
+
+        if clear:
+            plt.cla()
+            plt.clf()
+            plt.close()
+
+        # plot
+        fig, ax = plt.subplots()
+        forecast = self.forecast(start_date=min(self.timestamps) - datetime.timedelta(minutes=10),
+                                 end_date=max(self.timestamps) + datetime.timedelta(minutes=10))
+        xs, ys = zip(*forecast)
+        ax.plot(xs, ys, lw=1)
+
+        # adaptive threshold (5%)
+        threshold = sorted(ys, reverse=True)[len(ys) // 20]
+        ax.axhline(y=threshold, linewidth=0.5, color='green')
+
+        # fill when above threshold
+        xs = []
+        ys = []
+        for x, y in forecast:
+            if y >= threshold:
+                xs.append(x)
+                ys.append(y)
+            elif xs:
+                ax.fill_between(xs, ys, 0, alpha=0.2, color='green', lw=0)
+                xs = []
+                ys = []
+        if xs:
+            ax.fill_between(xs, ys, 0, alpha=0.2, color='green', lw=0)
+
+        # add lines for each timestamp
+        xs, ys = zip(*forecast)
+        for timestamp in self.timestamps:
+            likelihood = ys[bisect.bisect_left(xs, timestamp)]
+            if likelihood >= threshold:
+                ax.axvline(timestamp, ymax=likelihood, color='blue', lw=1)
+            else:
+                print(timestamp, likelihood)
+                ax.axvline(timestamp, ymax=likelihood, color='red', lw=2)
+
+        ax.xaxis.set_minor_locator(mdates.DayLocator())
+        ax.xaxis.set_major_locator(mdates.MonthLocator())
+        ax.yaxis.set_minor_locator(MultipleLocator(0.1))
+        ax.yaxis.set_major_locator(MultipleLocator(1))
+
+        # no y tick labels
+        ax.yaxis.set_ticks([])
+
+        ax.xaxis.grid(True, which='minor')
+        ax.grid(True)
+
+        plt.grid(b=True, color='black', linestyle='-')
+        plt.grid(b=True, which='minor', color='grey', linestyle='-', alpha=0.2)
+
+        # center each label
+        for label in ax.get_xticklabels():
+            label.set_horizontalalignment('left')
+
+        # set view limits
+        ax.set_xlim(left=forecast[0][0], right=forecast[-1][0])
+        ax.set_ylim(bottom=0, top=1)
+
+        if show:
+            plt.show()
+
+        if clear:
+            plt.cla()
+            plt.clf()
+            plt.close()
+        else:
+            return plt
+
 
 if __name__ == '__main__':
     time_stamps = [datetime.datetime(2020, 1, 1, 12, 23),
@@ -499,6 +712,9 @@ if __name__ == '__main__':
                    datetime.datetime(2020, 6, 4, 12, 37),
                    datetime.datetime(2020, 6, 4, 12, 38),
 
+                   datetime.datetime(2020, 6, 9, 18, 23),
+                   datetime.datetime(2020, 6, 9, 18, 25),
+
                    datetime.datetime(2020, 7, 2, 10, 23),
                    datetime.datetime(2020, 7, 2, 10, 24),
                    datetime.datetime(2020, 7, 2, 10, 25),
@@ -518,73 +734,81 @@ if __name__ == '__main__':
     tss = TimeStampSetV2()
     tss.add(*time_stamps)
 
-    test_time_stamps = [datetime.datetime(2020, 5,  1,  9, 30),
-                        datetime.datetime(2020, 5,  2,  9, 31),
-                        datetime.datetime(2020, 5,  3,  9, 32),
-                        datetime.datetime(2020, 5,  4,  9, 33),
-                        datetime.datetime(2020, 5,  5,  9, 34),
-                        datetime.datetime(2020, 5,  6, 10, 35),
-                        datetime.datetime(2020, 5,  7, 10, 36),
-                        datetime.datetime(2020, 5,  8, 10, 37),
-                        datetime.datetime(2020, 5,  9, 10, 38),
-                        datetime.datetime(2020, 5, 10, 10, 39),
-                        datetime.datetime(2020, 5, 11, 11, 40),
-                        datetime.datetime(2020, 5, 12, 11, 41),
-                        datetime.datetime(2020, 5, 13, 11, 42),
-                        datetime.datetime(2020, 5, 14, 11, 43),
-                        datetime.datetime(2020, 5, 15, 11, 44),
-                        datetime.datetime(2020, 5, 16, 12, 45),
-                        datetime.datetime(2020, 5, 17, 12, 46),
-                        datetime.datetime(2020, 5, 18, 12, 47),
-                        datetime.datetime(2020, 5, 19, 12, 48),
-                        datetime.datetime(2020, 5, 20, 12, 49),
-                        datetime.datetime(2020, 5, 21, 13, 50),
-                        datetime.datetime(2020, 5, 22, 13, 51),
-                        datetime.datetime(2020, 5, 23, 13, 52),
-                        datetime.datetime(2020, 5, 24, 13, 53),
-                        datetime.datetime(2020, 5, 25, 13, 54),
-                        datetime.datetime(2020, 5, 26, 14, 55),
-                        datetime.datetime(2020, 5, 27, 14, 56),
-                        datetime.datetime(2020, 5, 28, 14, 57),
-                        datetime.datetime(2020, 5, 29, 14, 58),
-                        datetime.datetime(2020, 5, 30, 14, 59),
-                        ]
-    for time_stamp in test_time_stamps:
-        print(time_stamp, tss.likelihood(time_stamp)[0])
+    # tss.plot()
 
-    tss.plot()
+    tss.plot_session_likelihoods()
+    pprint(tss.session_likelihoods())
+    # tss.plot_forecast(datetime.datetime(2020, 9, 1), datetime.datetime(2020, 12, 31))
+    # tss.plot_forecast(datetime.datetime(2020, 12, 21), datetime.datetime(2021, 1, 8))
 
-    tss1 = TimeStampSetV2()
-    tss2 = TimeStampSetV2()
-    tss1.add(*test_time_stamps[::2])
-    tss2.add(*test_time_stamps[1::2])
-    print('\n')
-    print(tss1.similarity(tss2))
-
-    tss1 = TimeStampSetV2()
-    tss2 = TimeStampSetV2()
-    tss1.add(*time_stamps[::2])
-    tss2.add(*time_stamps[1::2])
-    print('\n')
-    print(tss1.similarity(tss2))
-
-    tss1 = TimeStampSetV2()
-    tss1.add(*test_time_stamps[:len(test_time_stamps) // 2])
-    tss2 = TimeStampSetV2()
-    tss2.add(*test_time_stamps[len(test_time_stamps) // 2:])
-    print('\n')
-    print(tss1.similarity(tss2))
-
-    tss1 = TimeStampSetV2()
-    tss1.add(*time_stamps[:len(time_stamps) // 2])
-    tss2 = TimeStampSetV2()
-    tss2.add(*time_stamps[len(time_stamps) // 2:])
-    print('\n')
-    print(tss1.similarity(tss2))
-
-    tss1 = TimeStampSetV2()
-    tss1.add(*time_stamps)
-    tss2 = TimeStampSetV2()
-    tss2.add(*test_time_stamps)
-    print('\n')
-    print(tss1.similarity(tss2))
+    #
+    # test_time_stamps = [datetime.datetime(2020, 5, 1, 9, 30),
+    #                     datetime.datetime(2020, 5, 2, 9, 31),
+    #                     datetime.datetime(2020, 5, 3, 9, 32),
+    #                     datetime.datetime(2020, 5, 4, 9, 33),
+    #                     datetime.datetime(2020, 5, 5, 9, 34),
+    #                     datetime.datetime(2020, 5, 6, 10, 35),
+    #                     datetime.datetime(2020, 5, 7, 10, 36),
+    #                     datetime.datetime(2020, 5, 8, 10, 37),
+    #                     datetime.datetime(2020, 5, 9, 10, 38),
+    #                     datetime.datetime(2020, 5, 10, 10, 39),
+    #                     datetime.datetime(2020, 5, 11, 11, 40),
+    #                     datetime.datetime(2020, 5, 12, 11, 41),
+    #                     datetime.datetime(2020, 5, 13, 11, 42),
+    #                     datetime.datetime(2020, 5, 14, 11, 43),
+    #                     datetime.datetime(2020, 5, 15, 11, 44),
+    #                     datetime.datetime(2020, 5, 16, 12, 45),
+    #                     datetime.datetime(2020, 5, 17, 12, 46),
+    #                     datetime.datetime(2020, 5, 18, 12, 47),
+    #                     datetime.datetime(2020, 5, 19, 12, 48),
+    #                     datetime.datetime(2020, 5, 20, 12, 49),
+    #                     datetime.datetime(2020, 5, 21, 13, 50),
+    #                     datetime.datetime(2020, 5, 22, 13, 51),
+    #                     datetime.datetime(2020, 5, 23, 13, 52),
+    #                     datetime.datetime(2020, 5, 24, 13, 53),
+    #                     datetime.datetime(2020, 5, 25, 13, 54),
+    #                     datetime.datetime(2020, 5, 26, 14, 55),
+    #                     datetime.datetime(2020, 5, 27, 14, 56),
+    #                     datetime.datetime(2020, 5, 28, 14, 57),
+    #                     datetime.datetime(2020, 5, 29, 14, 58),
+    #                     datetime.datetime(2020, 5, 30, 14, 59),
+    #                     ]
+    # for time_stamp in test_time_stamps:
+    #     print(time_stamp, tss.likelihood(time_stamp)[0])
+    #
+    # tss.plot()
+    #
+    # tss1 = TimeStampSetV2()
+    # tss2 = TimeStampSetV2()
+    # tss1.add(*test_time_stamps[::2])
+    # tss2.add(*test_time_stamps[1::2])
+    # print('\n')
+    # print(tss1.similarity(tss2))
+    #
+    # tss1 = TimeStampSetV2()
+    # tss2 = TimeStampSetV2()
+    # tss1.add(*time_stamps[::2])
+    # tss2.add(*time_stamps[1::2])
+    # print('\n')
+    # print(tss1.similarity(tss2))
+    #
+    # tss1 = TimeStampSetV2()
+    # tss1.add(*test_time_stamps[:len(test_time_stamps) // 2])
+    # tss2 = TimeStampSetV2()
+    # tss2.add(*test_time_stamps[len(test_time_stamps) // 2:])
+    # print('\n')
+    # print(tss1.similarity(tss2))
+    #
+    # tss1 = TimeStampSetV2()
+    # tss1.add(*time_stamps[:len(time_stamps) // 2])
+    # tss2 = TimeStampSetV2()
+    # tss2.add(*time_stamps[len(time_stamps) // 2:])
+    # print('\n')
+    # print(tss1.similarity(tss2))
+    #
+    # tss1 = TimeStampSetV2()
+    # tss1.add(*time_stamps)
+    # tss2 = TimeStampSetV2()
+    # tss2.add(*test_time_stamps)
+    # print('\n')
+    # print(tss1.similarity(tss2))
