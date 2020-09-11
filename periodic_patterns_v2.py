@@ -4,11 +4,9 @@ import math
 from dataclasses import dataclass
 from dataclasses import field
 from functools import lru_cache
-from pprint import pprint
 from typing import Dict
 from typing import List
 from typing import Optional
-from typing import Set
 from typing import Tuple
 from typing import Union
 
@@ -23,30 +21,32 @@ def dot_product(vec_1, vec_2):
     return sum(x * y for x, y in zip(vec_1, vec_2))
 
 
-days_of_week = [
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday',
-]
-
-month_names = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-]
+hours_of_day = ['1am', '2am', '3am', '4am', '5am', '6am',
+                '7am', '8am', '9am', '10am', '11am', '12nn',
+                '1pm', '2pm', '3pm', '4pm', '5pm', '6pm',
+                '7pm', '8pm', '9pm', '10pm', '11pm', '12mn']
+days_of_week = ['Mon',  # 'Monday',
+                'Tue',  # 'Tuesday',
+                'Wed',  # 'Wednesday',
+                'Thu',  # 'Thursday',
+                'Fri',  # 'Friday',
+                'Sat',  # 'Saturday',
+                'Sun',  # 'Sunday',
+                ]
+month_names = ['Jan',  # 'January',
+               'Feb',  # 'February',
+               'Mar',  # 'March',
+               'Apr',  # 'April',
+               'May',  # 'May,
+               'Jun',  # 'June',
+               'Jul',  # 'July',
+               'Aug',  # 'August',
+               'Sep',  # 'September',
+               'Oct',  # 'October',
+               'Nov',  # 'November',
+               'Dec',  # 'December',
+               ]
+ordinals = ['0th', '1st', '2nd', '3rd', '4th', '5th', '6th']
 
 month_lengths = [
     31,
@@ -62,6 +62,168 @@ month_lengths = [
     30,
     31,
 ]
+
+
+@dataclass(eq=False)
+class GridPattern:
+    name: str
+    x_axis_labels: List[str]
+    y_axis_labels: List[str]
+    x_axis_name: Optional[str] = None
+    y_axis_name: Optional[str] = None
+    min_items: int = -1
+
+    data: Dict[Tuple[str, str], List] = field(default_factory=dict, init=False)
+    __vector: Tuple[float] = field(default_factory=list, init=False, repr=False)
+
+    def __post_init__(self):
+        # check name
+        if not isinstance(self.name, str):
+            raise TypeError(self.name)
+        elif len(self.name) == 0:
+            raise ValueError(self.name)
+
+        # check x_axis_name
+        if self.x_axis_name is not None:
+            if not isinstance(self.x_axis_name, str):
+                raise TypeError(self.x_axis_name)
+            elif not self.x_axis_name:
+                self.x_axis_name = None
+
+        # check y_axis_name
+        if self.y_axis_name is not None:
+            if not isinstance(self.y_axis_name, str):
+                raise TypeError(self.y_axis_name)
+            elif not self.y_axis_name:
+                self.y_axis_name = None
+
+        # check x_axis_labels
+        self.x_axis_labels = list(self.x_axis_labels)
+        if len(self.x_axis_labels) == 0:
+            raise ValueError(self.x_axis_labels)
+        for label in self.x_axis_labels:
+            if not isinstance(label, str):
+                raise TypeError(label)
+            elif len(label) == 0:
+                raise ValueError(label)
+
+        # check y_axis_labels
+        self.y_axis_labels = list(self.y_axis_labels)
+        for label in self.y_axis_labels:
+            if not isinstance(label, str):
+                raise TypeError(label)
+            elif len(label) == 0:
+                raise ValueError(label)
+        if len(self.y_axis_labels) == 0:
+            raise ValueError(self.y_axis_labels)
+
+        # adapt min_items
+        if self.min_items < 0:
+            self.min_items = int(math.ceil((len(self.x_axis_labels) + len(self.y_axis_labels)) / 2))
+
+        # create blank data dict
+        for x in self.x_axis_labels:
+            for y in self.y_axis_labels:
+                self.data[x, y] = []
+
+    def add(self, x, y, item=None):
+        # check item
+        if (x, y) not in self.data:
+            raise ValueError((x, y, self.data.keys()))
+
+        # reset
+        self.__vector = tuple()
+
+        # add item
+        self.data[x, y].append(item)
+
+    @property
+    def vector(self) -> Tuple[float]:
+        if len(self.__vector) == 0:
+            out = []
+            for x in self.x_axis_labels:
+                for y in self.y_axis_labels:
+                    out.append(float(len(self.data[x, y])))
+            vector_length = sum(elem ** 2 for elem in out) ** 0.5
+            self.__vector = tuple(elem / vector_length for elem in out)
+        return self.__vector
+
+    def plot(self, axis: Optional[plt.Axes] = None):
+        if axis is None:
+            fig, ax = plt.subplots()
+        else:
+            fig = None
+            ax = axis
+
+        # show numbers
+        data_grid = [[len(self.data[x, y]) for x in self.x_axis_labels] for y in self.y_axis_labels]
+        im = ax.imshow(data_grid, cmap='YlGnBu', aspect='auto')
+
+        # Create colorbar
+        cbar = ax.figure.colorbar(im, ax=ax)
+        cbar.ax.set_ylabel('count', rotation=-90, va="bottom")
+
+        # show all ticks
+        ax.set_xticks(range(len(self.x_axis_labels)))
+        ax.set_yticks(range(len(self.y_axis_labels)))
+        # label them with the respective list entries
+        ax.set_xticklabels(self.x_axis_labels)
+        ax.set_yticklabels(self.y_axis_labels)
+
+        # Let the horizontal axes labeling appear on top.
+        ax.tick_params(top=True, bottom=True, labeltop=True, labelbottom=True)
+
+        # # Rotate the tick labels and set their alignment.
+        # plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+
+        # Turn spines off
+        for edge, spine in ax.spines.items():
+            spine.set_visible(False)
+
+        # create white grid
+        ax.set_xticks([x - 0.5 for x in range(len(self.x_axis_labels) + 1)], minor=True)
+        ax.set_yticks([x - 0.5 for x in range(len(self.y_axis_labels) + 1)], minor=True)
+        ax.grid(which="minor", color="w", linestyle='-', linewidth=3)
+        ax.tick_params(which="minor", bottom=False, left=False)
+
+        # labels and formatting
+        # ax.grid(True)
+        if self.name is not None:
+            ax.set_title(self.name)
+        if self.x_axis_name is not None:
+            ax.set_xlabel(self.x_axis_name)
+        if self.y_axis_name is not None:
+            ax.set_ylabel(self.y_axis_name)
+
+        # # Loop over data dimensions and create text annotations.
+        # for x_idx, x in enumerate(self.x_axis_labels):
+        #     for y_idx, y in enumerate(self.y_axis_labels):
+        #         text = ax.text(x_idx, y_idx, str(len(self.data[x, y])), ha="center", va="center", color="w")
+
+        # Loop over the data and create a `Text` for each "pixel".
+        # Change the text's color depending on the data.
+        texts = []
+        textcolors = ["black", "white"]
+
+        # Normalize the threshold to the images color range.
+        threshold = im.norm(max(len(d) for d in self.data.values())) / 2
+        kw = {'horizontalalignment': 'center', 'verticalalignment': 'center'}
+        for x_idx, x in enumerate(self.x_axis_labels):
+            for y_idx, y in enumerate(self.y_axis_labels):
+                kw.update(color=textcolors[int(im.norm(len(self.data[x, y])) >= threshold)])
+                text = im.axes.text(x_idx, y_idx, f'{len(self.data[x, y])}', **kw)
+                texts.append(text)
+
+        if fig is not None:
+            fig.tight_layout()
+
+        return ax
+
+    def likelihood(self, x: str, y: str):
+        if (x, y) not in self.data:
+            raise ValueError((x, y, self.data.keys()))
+
+        return len(self.data[x, y]) / sum(self.vector)
 
 
 @dataclass(eq=False)
@@ -227,10 +389,10 @@ class ModuloPattern:
 
 def timestamp_hour_of_day_of_week_of_month(timestamp: datetime.datetime):
     # nth 7-day-period of month (starts at 1)
-    n = ((timestamp.day + 1) // 7) + 1
+    n = ordinals[((timestamp.day + 1) // 7) + 1]
 
     # n-th full week of month (starts at 1, can be 0)
-    full_week = (timestamp.day + 6 - timestamp.weekday()) // 7
+    full_week = ordinals[(timestamp.day + 6 - timestamp.weekday()) // 7]
 
     # day of week (starts at Monday)
     day_of_week = days_of_week[timestamp.weekday()]
@@ -301,24 +463,37 @@ class TimeStampSetV2:
         # all the timestamps will be indexed here
         self.timestamps: List[datetime.datetime] = []
 
-        # n-th day of month, n-th week of month
-        self.hour_day: Dict[Tuple[int, str], Set[int]] = dict()
-        self.n_day: Dict[Tuple[int, str], Set[int]] = dict()
-        self.n_week: Dict[Tuple[int, str], Set[int]] = dict()
+        # # n-th day of month, n-th week of month
+        # self.hour_day: Dict[Tuple[int, str], Set[int]] = dict()
+        # self.n_day: Dict[Tuple[int, str], Set[int]] = dict()
+        # self.n_week: Dict[Tuple[int, str], Set[int]] = dict()
 
         # patterns
+        self.hour_of_day = GridPattern(name='hour / day-of-week',
+                                       x_axis_name='day of week',
+                                       x_axis_labels=days_of_week,
+                                       y_axis_name='hour',
+                                       y_axis_labels=hours_of_day)
+        self.nth_day_of_month = GridPattern(name='n-th day-of-week of each month',
+                                            x_axis_name='day of week',
+                                            x_axis_labels=days_of_week,
+                                            y_axis_name='n',
+                                            y_axis_labels=ordinals[1:6])
+        self.full_week_of_month = GridPattern(name='n-th full week in month / day-of-week',
+                                              x_axis_name='day of week',
+                                              x_axis_labels=days_of_week,
+                                              y_axis_name='n-th full week',
+                                              y_axis_labels=ordinals[:6])
+
         self.day = ModuloPattern(name='day',
-                                 x_axis_labels=['1am', '2am', '3am', '4am', '5am', '6am',
-                                                '7am', '8am', '9am', '10am', '11am', '12nn',
-                                                '1pm', '2pm', '3pm', '4pm', '5pm', '6pm',
-                                                '7pm', '8pm', '9pm', '10pm', '11pm', '12mn'],
+                                 x_axis_labels=hours_of_day,
                                  x_axis_name='hour',
                                  min_periods=0)
         self.week = ModuloPattern(name='week',
-                                  x_axis_labels=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                                  x_axis_labels=days_of_week,
                                   x_axis_name='day')
         self.two_week = ModuloPattern(name='fortnight',
-                                      x_axis_labels=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] * 2,
+                                      x_axis_labels=days_of_week * 2,
                                       x_axis_name='day',
                                       min_periods=12)  # about 6 months
         self.month = ModuloPattern(name='month',
@@ -337,25 +512,19 @@ class TimeStampSetV2:
                                        x_axis_name='month',
                                        min_items=24)
         self.year = ModuloPattern(name='year',
-                                  x_axis_labels=['Jan', 'Feb', 'Mar',
-                                                 'Apr', 'May', 'Jun',
-                                                 'Jul', 'Aug', 'Sep',
-                                                 'Oct', 'Nov', 'Dec'],
+                                  x_axis_labels=month_names,
                                   x_axis_name='month',
                                   min_items=3 * 12)  # across 3 years
         self.two_year = ModuloPattern(name='2-year',
-                                      x_axis_labels=['Jan', 'Feb', 'Mar',
-                                                     'Apr', 'May', 'Jun',
-                                                     'Jul', 'Aug', 'Sep',
-                                                     'Oct', 'Nov', 'Dec'] * 2,
+                                      x_axis_labels=month_names * 2,
                                       x_axis_name='month',
                                       min_items=6 * 12)  # across 6 years
 
     @property
     def _patterns(self):
         _patterns = [self.day,
-                     self.week, self.two_week,
-                     self.month, self.two_month, self.three_month, self.six_month,
+                     self.week,  # self.two_week,
+                     self.month,  # self.two_month, self.three_month, self.six_month,
                      self.year, self.two_year,
                      ]
         return [_pattern for _pattern in _patterns if _pattern.is_valid]
@@ -372,9 +541,9 @@ class TimeStampSetV2:
 
             # count
             hour, n, full_week, day_of_week = timestamp_hour_of_day_of_week_of_month(timestamp)
-            self.hour_day.setdefault((hour, day_of_week), set()).add(timestamp_idx)
-            self.n_day.setdefault((n, day_of_week), set()).add(timestamp_idx)
-            self.n_week.setdefault((full_week, day_of_week), set()).add(timestamp_idx)
+            self.hour_of_day.add(day_of_week, hours_of_day[hour], timestamp_idx)
+            self.nth_day_of_month.add(day_of_week, n, timestamp_idx)
+            self.full_week_of_month.add(day_of_week, full_week, timestamp_idx)
 
             # modular patterns
             self.day.add(timestamp_day(timestamp))
@@ -464,13 +633,13 @@ class TimeStampSetV2:
             timestamps_likelihoods.append([
                 self.day.likelihood(timestamp_day(timestamp)),
                 self.week.likelihood(timestamp_week(timestamp)),
-                self.two_week.likelihood(timestamp_two_week(timestamp)),
+                # self.two_week.likelihood(timestamp_two_week(timestamp)),
                 self.month.likelihood(timestamp_n_month(timestamp)),
-                self.two_month.likelihood(timestamp_n_month(timestamp, n=2)),
-                self.three_month.likelihood(timestamp_n_month(timestamp, n=3)),
-                self.six_month.likelihood(timestamp_n_month(timestamp, n=6)),
-                self.year.likelihood(timestamp_n_year(timestamp)),
-                self.two_year.likelihood(timestamp_n_year(timestamp, n=2)),
+                # self.two_month.likelihood(timestamp_n_month(timestamp, n=2)),
+                # self.three_month.likelihood(timestamp_n_month(timestamp, n=3)),
+                # self.six_month.likelihood(timestamp_n_month(timestamp, n=6)),
+                # self.year.likelihood(timestamp_n_year(timestamp)),
+                # self.two_year.likelihood(timestamp_n_year(timestamp, n=2)),
             ])
 
         # return timestamps_likelihoods
@@ -541,9 +710,9 @@ class TimeStampSetV2:
         xs, ys = zip(*forecast)
         ax.plot(xs, ys, lw=1)
 
-        # adaptive threshold (5%)
+        # adaptive threshold (10% or 0.4)
         if threshold is None:
-            threshold = sorted(ys, reverse=True)[len(ys) // 20]
+            threshold = min(sorted(ys, reverse=True)[len(ys) // 10], 0.4)
         ax.axhline(y=threshold, linewidth=0.5, color='green')
 
         # fill when above threshold
@@ -592,6 +761,7 @@ class TimeStampSetV2:
             return plt
 
     def plot_session_likelihoods(self,
+                                 forecast_period: Optional[datetime.timedelta] = datetime.timedelta(minutes=10),
                                  show: bool = True,
                                  clear: bool = True,
                                  ):
@@ -606,37 +776,37 @@ class TimeStampSetV2:
         # plot
         fig, ax = plt.subplots()
         forecast = self.forecast(start_date=min(self.timestamps) - datetime.timedelta(minutes=10),
-                                 end_date=max(self.timestamps) + datetime.timedelta(minutes=10))
+                                 end_date=max(self.timestamps) + forecast_period)
         xs, ys = zip(*forecast)
         ax.plot(xs, ys, lw=1)
 
-        # adaptive threshold (5%)
-        threshold = sorted(ys, reverse=True)[len(ys) // 20]
+        # adaptive threshold (10% or 0.4)
+        threshold = min(sorted(ys, reverse=True)[len(ys) // 10], 0.4)
         ax.axhline(y=threshold, linewidth=0.5, color='green')
 
-        # fill when above threshold
-        xs = []
-        ys = []
-        for x, y in forecast:
-            if y >= threshold:
-                xs.append(x)
-                ys.append(y)
-            elif xs:
-                ax.fill_between(xs, ys, 0, alpha=0.2, color='green', lw=0)
-                xs = []
-                ys = []
-        if xs:
-            ax.fill_between(xs, ys, 0, alpha=0.2, color='green', lw=0)
+        # # fill when above threshold
+        # xs = []
+        # ys = []
+        # for x, y in forecast:
+        #     if y >= threshold:
+        #         xs.append(x)
+        #         ys.append(y)
+        #     elif xs:
+        #         ax.fill_between(xs, ys, 0, alpha=0.2, color='green', lw=0)
+        #         xs = []
+        #         ys = []
+        # if xs:
+        #     ax.fill_between(xs, ys, 0, alpha=0.2, color='green', lw=0)
 
         # add lines for each timestamp
         xs, ys = zip(*forecast)
         for timestamp in self.timestamps:
             likelihood = ys[bisect.bisect_left(xs, timestamp)]
             if likelihood >= threshold:
-                ax.axvline(timestamp, ymax=likelihood, color='blue', lw=1)
+                ax.plot([timestamp, timestamp], [0, likelihood], color='blue')  # more accurate than `ax.axvline`
             else:
                 print(timestamp, likelihood)
-                ax.axvline(timestamp, ymax=likelihood, color='red', lw=2)
+                ax.plot([timestamp, timestamp], [0, likelihood], color='red', lw=2)
 
         ax.xaxis.set_minor_locator(mdates.DayLocator())
         ax.xaxis.set_major_locator(mdates.MonthLocator())
@@ -650,7 +820,7 @@ class TimeStampSetV2:
         ax.grid(True)
 
         plt.grid(b=True, color='black', linestyle='-')
-        plt.grid(b=True, which='minor', color='grey', linestyle='-', alpha=0.2)
+        plt.grid(b=True, which='minor', color='gray', linestyle='-', alpha=0.2, lw=0.5)
 
         # center each label
         for label in ax.get_xticklabels():
@@ -672,72 +842,257 @@ class TimeStampSetV2:
 
 
 if __name__ == '__main__':
-    time_stamps = [datetime.datetime(2020, 1, 1, 12, 23),
-                   datetime.datetime(2020, 1, 1, 12, 34),
-                   datetime.datetime(2020, 1, 1, 12, 34),
-                   datetime.datetime(2020, 1, 2, 11, 56),
-                   datetime.datetime(2020, 1, 2, 11, 56),
+    # fh
+    time_stamps = [datetime.datetime(2018, 11, 29, 11, 24),
+                   datetime.datetime(2018, 11, 29, 11, 24),
+                   datetime.datetime(2018, 11, 29, 11, 24),
+                   datetime.datetime(2018, 11, 30, 12, 9),
+                   datetime.datetime(2018, 11, 30, 12, 10),
+                   datetime.datetime(2018, 11, 30, 12, 10),
+                   datetime.datetime(2018, 11, 30, 12, 11),
+                   datetime.datetime(2018, 11, 30, 12, 11),
+                   datetime.datetime(2018, 11, 30, 12, 11),
 
-                   datetime.datetime(2020, 2, 5, 12, 9),
-                   datetime.datetime(2020, 2, 6, 13, 9),
-                   datetime.datetime(2020, 2, 6, 13, 19),
-                   datetime.datetime(2020, 2, 6, 13, 29),
-                   datetime.datetime(2020, 2, 6, 13, 30),
-                   datetime.datetime(2020, 2, 6, 13, 31),
+                   datetime.datetime(2018, 12, 13, 3, 53),
+                   datetime.datetime(2018, 12, 25, 17, 56),
 
-                   datetime.datetime(2020, 3, 6, 11, 29),
-                   datetime.datetime(2020, 3, 6, 12, 1),
-                   datetime.datetime(2020, 3, 6, 12, 2),
-                   datetime.datetime(2020, 3, 6, 12, 12),
-                   datetime.datetime(2020, 3, 6, 12, 22),
+                   datetime.datetime(2019, 1, 1, 11, 15),
+                   datetime.datetime(2019, 1, 1, 11, 15),
+                   datetime.datetime(2019, 1, 7, 13, 5),
+                   datetime.datetime(2019, 1, 7, 13, 6),
+                   datetime.datetime(2019, 1, 7, 14, 57),
+                   datetime.datetime(2019, 1, 14, 11, 19),
+                   datetime.datetime(2019, 1, 14, 11, 19),
+                   datetime.datetime(2019, 1, 14, 11, 19),
+                   datetime.datetime(2019, 1, 18, 8, 40),
+                   datetime.datetime(2019, 1, 18, 8, 40),
+                   datetime.datetime(2019, 1, 18, 8, 40),
+                   datetime.datetime(2019, 1, 18, 8, 48),
+                   datetime.datetime(2019, 1, 28, 15, 56),
+                   datetime.datetime(2019, 1, 28, 15, 56),
+                   datetime.datetime(2019, 1, 28, 15, 56),
+                   datetime.datetime(2019, 1, 28, 15, 57),
+                   datetime.datetime(2019, 1, 28, 15, 57),
+                   datetime.datetime(2019, 1, 28, 15, 57),
+                   datetime.datetime(2019, 1, 28, 15, 57),
+                   datetime.datetime(2019, 1, 28, 15, 57),
+                   datetime.datetime(2019, 1, 28, 15, 57),
+                   datetime.datetime(2019, 1, 28, 15, 57),
 
-                   datetime.datetime(2020, 4, 1, 12, 43),
-                   datetime.datetime(2020, 4, 1, 12, 44),
-                   datetime.datetime(2020, 4, 2, 11, 45),
-                   datetime.datetime(2020, 4, 2, 11, 47),
-                   datetime.datetime(2020, 4, 3, 13, 47),
-                   datetime.datetime(2020, 4, 3, 13, 47),
-                   datetime.datetime(2020, 4, 3, 13, 48),
+                   datetime.datetime(2019, 2, 27, 8, 59),
 
-                   datetime.datetime(2020, 5, 8, 10, 48),
-                   datetime.datetime(2020, 5, 8, 10, 48),
-                   datetime.datetime(2020, 5, 8, 10, 48),
-                   datetime.datetime(2020, 5, 8, 10, 48),
-                   datetime.datetime(2020, 5, 8, 10, 48),
+                   datetime.datetime(2019, 3, 1, 11, 53),
+                   datetime.datetime(2019, 3, 1, 11, 53),
+                   datetime.datetime(2019, 3, 10, 20, 14),
+                   datetime.datetime(2019, 3, 10, 20, 15),
+                   datetime.datetime(2019, 3, 10, 20, 15),
+                   datetime.datetime(2019, 3, 10, 20, 15),
+                   datetime.datetime(2019, 3, 10, 20, 15),
+                   datetime.datetime(2019, 3, 10, 20, 15),
+                   datetime.datetime(2019, 3, 15, 17, 27),
+                   datetime.datetime(2019, 3, 15, 17, 27),
+                   datetime.datetime(2019, 3, 15, 17, 27),
+                   datetime.datetime(2019, 3, 31, 17, 45),
+                   datetime.datetime(2019, 3, 31, 17, 45),
+                   datetime.datetime(2019, 3, 31, 17, 45),
+                   datetime.datetime(2019, 3, 31, 17, 45),
+                   datetime.datetime(2019, 3, 31, 17, 45),
 
-                   datetime.datetime(2020, 6, 4, 12, 33),
-                   datetime.datetime(2020, 6, 4, 12, 34),
-                   datetime.datetime(2020, 6, 4, 12, 35),
-                   datetime.datetime(2020, 6, 4, 12, 36),
-                   datetime.datetime(2020, 6, 4, 12, 37),
-                   datetime.datetime(2020, 6, 4, 12, 38),
+                   datetime.datetime(2019, 4, 10, 16, 7),
+                   datetime.datetime(2019, 4, 10, 16, 7),
+                   datetime.datetime(2019, 4, 10, 16, 7),
+                   datetime.datetime(2019, 4, 10, 16, 7),
+                   datetime.datetime(2019, 4, 10, 16, 7),
+                   datetime.datetime(2019, 4, 10, 16, 7),
+                   datetime.datetime(2019, 4, 25, 11, 47),
+                   datetime.datetime(2019, 4, 28, 11, 53),
+                   datetime.datetime(2019, 4, 28, 11, 53),
 
-                   datetime.datetime(2020, 6, 9, 18, 23),
-                   datetime.datetime(2020, 6, 9, 18, 25),
+                   datetime.datetime(2019, 5, 7, 10, 16),
+                   datetime.datetime(2019, 5, 7, 10, 17),
+                   datetime.datetime(2019, 5, 7, 10, 17),
+                   datetime.datetime(2019, 5, 7, 10, 17),
+                   datetime.datetime(2019, 5, 7, 10, 17),
+                   datetime.datetime(2019, 5, 7, 10, 17),
+                   datetime.datetime(2019, 5, 7, 10, 17),
+                   datetime.datetime(2019, 5, 7, 10, 17),
+                   datetime.datetime(2019, 5, 7, 10, 17),
+                   datetime.datetime(2019, 5, 7, 10, 17),
+                   datetime.datetime(2019, 5, 31, 9, 59),
 
-                   datetime.datetime(2020, 7, 2, 10, 23),
-                   datetime.datetime(2020, 7, 2, 10, 24),
-                   datetime.datetime(2020, 7, 2, 10, 25),
-                   datetime.datetime(2020, 7, 2, 11, 26),
-                   datetime.datetime(2020, 7, 2, 11, 27),
-                   datetime.datetime(2020, 7, 2, 11, 28),
+                   datetime.datetime(2019, 6, 4, 22, 30),
+                   datetime.datetime(2019, 6, 4, 22, 30),
+                   datetime.datetime(2019, 6, 4, 22, 30),
+                   datetime.datetime(2019, 6, 4, 22, 30),
+                   datetime.datetime(2019, 6, 4, 22, 30),
+                   datetime.datetime(2019, 6, 4, 22, 30),
+                   datetime.datetime(2019, 6, 4, 22, 30),
+                   datetime.datetime(2019, 6, 4, 22, 30),
+                   datetime.datetime(2019, 6, 4, 22, 30),
+                   datetime.datetime(2019, 6, 4, 22, 30),
+                   datetime.datetime(2019, 6, 4, 22, 30),
 
-                   datetime.datetime(2020, 8, 5, 13, 3),
-                   datetime.datetime(2020, 8, 5, 13, 4),
-                   datetime.datetime(2020, 8, 5, 13, 5),
-                   datetime.datetime(2020, 8, 6, 13, 6),
-                   datetime.datetime(2020, 8, 6, 13, 7),
-                   datetime.datetime(2020, 8, 6, 13, 8),
-                   datetime.datetime(2020, 8, 9, 13, 8),
+                   datetime.datetime(2019, 7, 4, 12, 31),
+                   datetime.datetime(2019, 7, 4, 12, 31),
+                   datetime.datetime(2019, 7, 4, 12, 31),
+                   datetime.datetime(2019, 7, 4, 12, 31),
+                   datetime.datetime(2019, 7, 4, 12, 32),
+                   datetime.datetime(2019, 7, 4, 12, 32),
+                   datetime.datetime(2019, 7, 8, 18, 53),
+
+                   datetime.datetime(2019, 8, 5, 11, 34),
+                   datetime.datetime(2019, 8, 7, 11, 43),
+                   datetime.datetime(2019, 8, 12, 14, 54),
+                   datetime.datetime(2019, 8, 16, 19, 40),
+                   datetime.datetime(2019, 8, 16, 19, 40),
+                   datetime.datetime(2019, 8, 19, 21, 43),
+                   datetime.datetime(2019, 8, 19, 21, 43),
+
+                   datetime.datetime(2019, 9, 4, 16, 57),
+                   datetime.datetime(2019, 9, 9, 12, 34),
+                   datetime.datetime(2019, 9, 9, 12, 34),
+                   datetime.datetime(2019, 9, 9, 12, 34),
+                   datetime.datetime(2019, 9, 9, 12, 34),
+                   datetime.datetime(2019, 9, 9, 12, 34),
+                   datetime.datetime(2019, 9, 9, 12, 34),
+
+                   datetime.datetime(2019, 10, 8, 12, 15),
+                   datetime.datetime(2019, 10, 8, 12, 18),
+                   datetime.datetime(2019, 10, 8, 12, 18),
+                   datetime.datetime(2019, 10, 8, 12, 18),
+                   datetime.datetime(2019, 10, 8, 12, 19),
+                   datetime.datetime(2019, 10, 8, 12, 19),
+                   datetime.datetime(2019, 10, 8, 12, 19),
+                   datetime.datetime(2019, 10, 8, 12, 19),
+
+                   datetime.datetime(2019, 11, 4, 22, 13),
+                   datetime.datetime(2019, 11, 4, 22, 13),
+                   datetime.datetime(2019, 11, 4, 22, 13),
+                   datetime.datetime(2019, 11, 4, 22, 13),
+                   datetime.datetime(2019, 11, 4, 22, 14),
+                   datetime.datetime(2019, 11, 4, 22, 14),
+                   datetime.datetime(2019, 11, 4, 22, 14),
+                   datetime.datetime(2019, 11, 4, 22, 14),
+                   datetime.datetime(2019, 11, 4, 22, 14),
+                   datetime.datetime(2019, 11, 13, 20, 48),
+                   datetime.datetime(2019, 11, 18, 22, 37),
+
+                   datetime.datetime(2019, 12, 3, 13, 11),
+                   datetime.datetime(2019, 12, 4, 16, 33),
+                   datetime.datetime(2019, 12, 4, 16, 33),
+                   datetime.datetime(2019, 12, 4, 16, 33),
+                   datetime.datetime(2019, 12, 4, 16, 33),
+                   datetime.datetime(2019, 12, 4, 16, 33),
+                   datetime.datetime(2019, 12, 4, 16, 33),
+                   datetime.datetime(2019, 12, 4, 16, 34),
+                   datetime.datetime(2019, 12, 4, 16, 34),
+                   datetime.datetime(2019, 12, 4, 16, 34),
+                   datetime.datetime(2019, 12, 14, 14, 33),
+                   datetime.datetime(2019, 12, 16, 11, 59),
+
+                   datetime.datetime(2020, 1, 7, 23, 20),
+                   datetime.datetime(2020, 1, 7, 23, 20),
+                   datetime.datetime(2020, 1, 7, 23, 20),
+                   datetime.datetime(2020, 1, 7, 23, 21),
+                   datetime.datetime(2020, 1, 7, 23, 21),
+                   datetime.datetime(2020, 1, 7, 23, 21),
+                   datetime.datetime(2020, 1, 7, 23, 21),
+                   datetime.datetime(2020, 1, 7, 23, 21),
+                   datetime.datetime(2020, 1, 7, 23, 21),
+                   datetime.datetime(2020, 1, 7, 23, 21),
+                   datetime.datetime(2020, 1, 7, 23, 21),
+                   datetime.datetime(2020, 1, 14, 10, 33),
+                   datetime.datetime(2020, 1, 17, 17, 47),
+                   datetime.datetime(2020, 1, 17, 17, 47),
+                   datetime.datetime(2020, 1, 17, 17, 47),
+                   datetime.datetime(2020, 1, 17, 17, 47),
+                   datetime.datetime(2020, 1, 17, 17, 47),
+
+                   datetime.datetime(2020, 2, 14, 10, 27),
+                   datetime.datetime(2020, 2, 14, 10, 28),
+                   datetime.datetime(2020, 2, 14, 10, 28),
+                   datetime.datetime(2020, 2, 14, 10, 28),
+                   datetime.datetime(2020, 2, 14, 10, 29),
+                   datetime.datetime(2020, 2, 14, 10, 29),
+                   datetime.datetime(2020, 2, 14, 10, 30),
+
+                   datetime.datetime(2020, 3, 3, 14, 13),
+                   datetime.datetime(2020, 3, 9, 12, 16),
+                   datetime.datetime(2020, 3, 9, 12, 16),
+                   datetime.datetime(2020, 3, 10, 18, 8),
+                   datetime.datetime(2020, 3, 13, 16, 3),
+                   datetime.datetime(2020, 3, 13, 21, 21),
+                   datetime.datetime(2020, 3, 13, 21, 21),
+                   datetime.datetime(2020, 3, 13, 21, 22),
+                   datetime.datetime(2020, 3, 13, 21, 23),
+                   datetime.datetime(2020, 3, 17, 15, 6),
+                   datetime.datetime(2020, 3, 17, 20, 47),
+
+                   datetime.datetime(2020, 4, 1, 9, 59),
+                   datetime.datetime(2020, 4, 3, 16, 42),
+                   datetime.datetime(2020, 4, 3, 16, 43),
+                   datetime.datetime(2020, 4, 3, 16, 43),
+                   datetime.datetime(2020, 4, 3, 16, 43),
+                   datetime.datetime(2020, 4, 3, 16, 43),
+                   datetime.datetime(2020, 4, 3, 16, 43),
+                   datetime.datetime(2020, 4, 3, 16, 43),
+                   datetime.datetime(2020, 4, 3, 16, 43),
+                   datetime.datetime(2020, 4, 3, 16, 43),
+                   datetime.datetime(2020, 4, 29, 21, 24),
+                   datetime.datetime(2020, 4, 29, 21, 24),
+                   datetime.datetime(2020, 4, 29, 21, 24),
+                   datetime.datetime(2020, 4, 29, 21, 24),
+                   datetime.datetime(2020, 4, 29, 21, 24),
+                   datetime.datetime(2020, 4, 29, 21, 24),
+                   datetime.datetime(2020, 4, 29, 21, 24),
+                   datetime.datetime(2020, 4, 29, 21, 24),
+                   datetime.datetime(2020, 4, 29, 21, 24),
+                   datetime.datetime(2020, 4, 29, 21, 24),
+
+                   datetime.datetime(2020, 6, 2, 16, 10),
+                   datetime.datetime(2020, 6, 2, 16, 10),
+                   datetime.datetime(2020, 6, 3, 14, 44),
+                   datetime.datetime(2020, 6, 3, 14, 44),
+                   datetime.datetime(2020, 6, 3, 14, 44),
+                   datetime.datetime(2020, 6, 3, 14, 44),
+                   datetime.datetime(2020, 6, 3, 14, 45),
+                   datetime.datetime(2020, 6, 3, 14, 45),
+                   datetime.datetime(2020, 6, 3, 14, 45),
+                   datetime.datetime(2020, 6, 11, 16, 50),
+                   datetime.datetime(2020, 6, 30, 22, 44),
+
+                   datetime.datetime(2020, 7, 2, 19, 3),
+                   datetime.datetime(2020, 7, 2, 19, 3),
+                   datetime.datetime(2020, 7, 2, 19, 4),
+                   datetime.datetime(2020, 7, 2, 19, 4),
+
+                   datetime.datetime(2020, 8, 4, 7, 34),
+                   datetime.datetime(2020, 8, 6, 16, 2),
+                   datetime.datetime(2020, 8, 6, 16, 2),
+                   datetime.datetime(2020, 8, 6, 16, 2),
+                   datetime.datetime(2020, 8, 6, 16, 2),
                    ]
 
     tss = TimeStampSetV2()
     tss.add(*time_stamps)
 
-    # tss.plot()
+    # print(len(tss.sessions()))
+    #
+    # tss2 = TimeStampSetV2()
+    # tss2.add(*[session[0] for session in tss.sessions()])
+    #
+    tss.hour_of_day.plot()
+    plt.show()
+    tss.nth_day_of_month.plot()
+    plt.show()
+    tss.full_week_of_month.plot()
+    plt.show()
+    #
+    # tss.plot_session_likelihoods(forecast_period=datetime.timedelta(days=45))
+    # pprint(tss.session_likelihoods())
 
-    tss.plot_session_likelihoods()
-    pprint(tss.session_likelihoods())
+    tss.plot()
+
     # tss.plot_forecast(datetime.datetime(2020, 9, 1), datetime.datetime(2020, 12, 31))
     # tss.plot_forecast(datetime.datetime(2020, 12, 21), datetime.datetime(2021, 1, 8))
 
