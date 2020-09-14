@@ -148,9 +148,9 @@ class GridPattern:
             self.__vector = tuple(elem / vector_length for elem in out)
         return self.__vector
 
-    def plot(self, axis: Optional[plt.Axes] = None):
+    def plot(self, axis: Optional[plt.Axes] = None, figsize=(10, 10)):
         if axis is None:
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=figsize)
         else:
             fig = None
             ax = axis
@@ -600,13 +600,13 @@ class TimeStampSetV2:
     def fractions(self):
         return {_pattern.name: sorted(_pattern.remainders) for _pattern in self._patterns}
 
-    def plot(self, show=True, clear=True):
+    def plot(self, figsize=(10, 10), show=True, clear=True):
         if clear:
             plt.cla()
             plt.clf()
             plt.close()
 
-        fig, axes = plt.subplots(nrows=len(self._patterns))
+        fig, axes = plt.subplots(nrows=len(self._patterns), figsize=figsize)
         for _pattern, axis in zip(self._patterns, axes.flatten() if len(self._patterns) > 1 else [axes]):
             _pattern.plot(axis)
 
