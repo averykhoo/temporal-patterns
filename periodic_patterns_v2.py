@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from functools import lru_cache
 from typing import Dict
+from typing import Iterable
 from typing import List
 from typing import Optional
 from typing import Tuple
@@ -12,6 +13,7 @@ from typing import Union
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib.ticker import MultipleLocator
 
 from kernel_density import plot_kde_modulo
@@ -459,7 +461,7 @@ def timestamp_n_year(timestamp: datetime.datetime, n: int = 1) -> float:
 
 
 class TimeStampSetV2:
-    def __init__(self):
+    def __init__(self, *timestamps):
         # all the timestamps will be indexed here
         self.timestamps: List[datetime.datetime] = []
 
@@ -520,17 +522,41 @@ class TimeStampSetV2:
                                       x_axis_name='month',
                                       min_items=6 * 12)  # across 6 years
 
+        if timestamps:
+            for ts in timestamps:
+                self.add(ts)
+
     @property
     def _patterns(self):
         _patterns = [self.day,
                      self.week,  # self.two_week,
                      self.month,  # self.two_month, self.three_month, self.six_month,
-                     self.year, self.two_year,
+                     self.year,  # self.two_year,
                      ]
         return [_pattern for _pattern in _patterns if _pattern.is_valid]
 
-    def add(self, *timestamps: datetime.datetime):
-        for timestamp in timestamps:
+    def __len__(self):
+        return len(self.timestamps)
+
+    def __iter__(self):
+        self.timestamps = sorted(self.timestamps)
+        return iter(self.timestamps)
+
+    def add(self, timestamps: Union[datetime.datetime, Iterable[datetime.datetime]]):
+        # normalize format
+        if isinstance(timestamps, datetime.datetime):
+            _timestamps = [timestamps]
+        elif isinstance(timestamps, pd.Timestamp):
+            _timestamps = [timestamps.to_pydatetime()]
+        else:
+            _timestamps = [ts.to_pydatetime() if isinstance(ts, pd.Timestamp) else ts for ts in timestamps]
+
+        # seems abnormal
+        if not all(isinstance(timestamp, datetime.datetime) for timestamp in _timestamps):
+            raise TypeError(timestamps)
+
+        # add the timestamps
+        for timestamp in _timestamps:
             # replace timezone
             timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
 
@@ -576,6 +602,9 @@ class TimeStampSetV2:
         if buffer:
             out.append(buffer)
         return out
+
+    def session_set(self, distance=datetime.timedelta(days=1.5)):
+        return TimeStampSetV2(session[0] for session in self.sessions(distance=distance))
 
     def session_likelihoods(self, distance=datetime.timedelta(days=1.5)):
         sessions = self.sessions(distance=distance)
@@ -764,9 +793,11 @@ class TimeStampSetV2:
                                  forecast_period: Optional[datetime.timedelta] = datetime.timedelta(minutes=10),
                                  show: bool = True,
                                  clear: bool = True,
+                                 figsize=(10, 10),
                                  ):
         if not self.timestamps:
             return
+        self.timestamps = sorted(self.timestamps)
 
         if clear:
             plt.cla()
@@ -774,9 +805,9 @@ class TimeStampSetV2:
             plt.close()
 
         # plot
-        fig, ax = plt.subplots()
-        forecast = self.forecast(start_date=min(self.timestamps) - datetime.timedelta(minutes=10),
-                                 end_date=max(self.timestamps) + forecast_period)
+        fig, ax = plt.subplots(figsize=figsize)
+        forecast = self.forecast(start_date=self.timestamps[0] - datetime.timedelta(minutes=10),
+                                 end_date=self.timestamps[-1] + forecast_period)
         xs, ys = zip(*forecast)
         ax.plot(xs, ys, lw=1)
 
@@ -800,15 +831,17 @@ class TimeStampSetV2:
 
         # add lines for each timestamp
         xs, ys = zip(*forecast)
+        idx = 0
         for timestamp in self.timestamps:
-            likelihood = ys[bisect.bisect_left(xs, timestamp)]
+            idx = bisect.bisect_left(xs, timestamp, lo=idx)
+            likelihood = ys[idx]
             if likelihood >= threshold:
                 ax.plot([timestamp, timestamp], [0, likelihood], color='blue')  # more accurate than `ax.axvline`
             else:
                 print(timestamp, likelihood)
                 ax.plot([timestamp, timestamp], [0, likelihood], color='red', lw=2)
 
-        ax.xaxis.set_minor_locator(mdates.DayLocator())
+        ax.xaxis.set_minor_locator(mdates.DayLocator())  # must set minor before major locator
         ax.xaxis.set_major_locator(mdates.MonthLocator())
         ax.yaxis.set_minor_locator(MultipleLocator(0.1))
         ax.yaxis.set_major_locator(MultipleLocator(1))
