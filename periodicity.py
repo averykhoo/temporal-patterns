@@ -18,7 +18,7 @@ def flatten_timestamps(events, magnitudes=None):
 
     # convert datetime to unix seconds
     epoch = datetime.datetime(1970, 1, 1)
-    unix_events = [int((dt - epoch).total_seconds()) for dt in events if not pd.isna(dt)]
+    unix_events = [int((dt.replace(tzinfo=None) - epoch).total_seconds()) for dt in events if not pd.isna(dt)]
 
     # anchors
     unix_first = min(unix_events)
@@ -44,8 +44,8 @@ def fourier(time_series):
     amplitudes = np.fft.fft(time_series)
 
     # we don't want the negative frequencies
-    frequencies = frequencies[:len(frequencies) / 2]
-    amplitudes = amplitudes[:len(amplitudes) / 2]
+    frequencies = frequencies[:len(frequencies) // 2]
+    amplitudes = amplitudes[:len(amplitudes) // 2]
 
     # we don't want the zero frequency == infinite period
     frequencies = frequencies[1:]
