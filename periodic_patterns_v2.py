@@ -794,6 +794,8 @@ class TimeStampSetV2:
                                  show: bool = True,
                                  clear: bool = True,
                                  figsize=(10, 10),
+                                 x_lim=(None, None),
+                                 threshold=None,
                                  ):
         if not self.timestamps:
             return
@@ -812,7 +814,8 @@ class TimeStampSetV2:
         ax.plot(xs, ys, lw=1)
 
         # adaptive threshold (10% or 0.4)
-        threshold = min(sorted(ys, reverse=True)[len(ys) // 10], 0.4)
+        threshold = min(sorted(ys, reverse=True)[len(ys) // 10], 0.4) if threshold is None else threshold
+        assert 0 < threshold < 1
         ax.axhline(y=threshold, linewidth=0.5, color='green')
 
         # # fill when above threshold
@@ -860,7 +863,8 @@ class TimeStampSetV2:
             label.set_horizontalalignment('left')
 
         # set view limits
-        ax.set_xlim(left=forecast[0][0], right=forecast[-1][0])
+        ax.set_xlim(left=forecast[0][0] if x_lim[0] is None else x_lim[0],
+                    right=forecast[-1][0] if x_lim[1] is None else x_lim[1])
         ax.set_ylim(bottom=0, top=1)
 
         if show:
