@@ -326,9 +326,9 @@ class ModuloPattern:
                 buffer = []
         return out
 
-    def plot(self, axis: Optional[plt.Axes] = None, color: str = 'blue'):
+    def plot(self, axis: Optional[plt.Axes] = None, color: str = 'blue', figsize=(10, 10)):
         if axis is None:
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=figsize)
         else:
             fig = None
             ax = axis
