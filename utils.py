@@ -4,6 +4,7 @@ import math
 import os
 import re
 import warnings
+from functools import lru_cache
 from ipaddress import IPv4Address
 from typing import Iterable
 from typing import Optional
@@ -12,7 +13,6 @@ from typing import Union
 import numpy as np
 import pandas as pd
 import tld
-from fastcache import clru_cache as lru_cache
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 

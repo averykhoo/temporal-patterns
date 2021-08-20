@@ -1,9 +1,5 @@
 import math
-
-try:
-    from fastcache import clru_cache as lru_cache
-except ModuleNotFoundError:
-    from functools import lru_cache
+from functools import lru_cache
 
 
 def general_mean(*xs, dim=1):

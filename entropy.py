@@ -3,7 +3,7 @@ Functions to calculate Shannon entropy of strings
 """
 import math
 
-from fastcache import clru_cache as lru_cache
+from functools import lru_cache
 
 # noinspection SpellCheckingInspection
 BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='

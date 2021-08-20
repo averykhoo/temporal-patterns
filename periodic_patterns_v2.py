@@ -841,7 +841,7 @@ class TimeStampSetV2:
             if likelihood >= threshold:
                 ax.plot([timestamp, timestamp], [0, likelihood], color='blue')  # more accurate than `ax.axvline`
             else:
-                print(timestamp, likelihood)
+                print(timestamp, timestamp.strftime('%A'), likelihood)
                 ax.plot([timestamp, timestamp], [0, likelihood], color='red', lw=2)
 
         ax.xaxis.set_minor_locator(mdates.DayLocator())  # must set minor before major locator
